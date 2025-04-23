@@ -7,7 +7,7 @@ Ein selbst gehostetes, intuitives Projektmanagementsystem – einfach, schnell, 
 ## 📚 Inhaltsverzeichnis
 
 - [🧩 Features](#-features)
-- [☁️ Kein Bock auf Selfhosting?](#-kein-bock-auf-selfhosting?)
+- [☁️ Kein Bock auf Selfhosting?](#-kein-bock-auf-selfhosting)
 - [🚀 Installation & Start](#-installation--start)
 - [🎨 Logo gesucht!](#-logo-gesucht)
 - [📄 Lizenz](#-lizenz)
@@ -27,7 +27,7 @@ Ein selbst gehostetes, intuitives Projektmanagementsystem – einfach, schnell, 
 
 ---
 
-## ☁️ Kein Bock auf Selfhosting?
+## ☁️ Kein Bock auf Selfhosting ?
 
 Wenn du dich lieber aufs Projekt konzentrieren willst und keine Lust auf Docker, Server & Setup hast:
 Wir bieten eine fertig eingerichtete, gehostete Version von openTasks an – mit eigenem Link (z. B. https://tasks.deinefirma.de) und Admin-Zugang.
