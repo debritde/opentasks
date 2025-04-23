@@ -4,6 +4,16 @@ Ein selbst gehostetes, intuitives Projektmanagementsystem – einfach, schnell, 
 
 ---
 
+## 📚 Inhaltsverzeichnis
+
+- [🧩 Features](#-features)
+- [☁️ Kein Bock auf Selfhosting?](#-kein-bock-auf-selfhosting)
+- [🚀 Installation & Start](#-installation--start)
+- [🎨 Logo gesucht!](#-logo-gesucht)
+- [📄 Lizenz](#-lizenz)
+
+---
+
 ## 🧩 Features
 
 - 📁 Anlegen **beliebig vieler Projekte**
@@ -16,6 +26,17 @@ Ein selbst gehostetes, intuitives Projektmanagementsystem – einfach, schnell, 
 - 🆓 **100% kostenlos – keine „Pro User / Monat“-Kosten** wie bei den meisten anderen Tools (Fürs Hosting nehmen wir natürlich etwas, aber auch da bieten wir einen absolut fairen Preis an 🙂)
 
 ---
+
+## ☁️ Kein Bock auf Selfhosting?
+
+Wenn du dich lieber aufs Projekt konzentrieren willst und keine Lust auf Docker, Server & Setup hast:
+Wir bieten eine fertig eingerichtete, gehostete Version von openTasks an – mit eigenem Link (z. B. https://tasks.deinefirma.de) und Admin-Zugang.
+
+💶 Preis: 19,99 €/Monat (fair & transparent, ohne Nutzerlimit)
+
+👉 Jetzt Infos & Kontakt: https://opentasks.de
+
+--- 
 
 ## 🚀 Installation & Start
 
