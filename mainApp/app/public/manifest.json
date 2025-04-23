@@ -1,0 +1,22 @@
+{
+    "name": "openTasks",
+    "short_name": "openTasks",
+    "description": "openTasks - heftig gutes Projekt und Task Management",
+    "theme_color": "#ff3e6c",
+    "background_color": "#f8f9fa",
+    "display": "standalone",
+    "start_url": "/",
+    "icons": [
+      {
+        "src": "/icon-192x192.png",
+        "sizes": "192x192",
+        "type": "image/png"
+      },
+      {
+        "src": "/icon-512x512.png",
+        "sizes": "512x512",
+        "type": "image/png"
+      }
+    ]
+  }
+  

@@ -1,0 +1,19 @@
+{
+    "mongodb_connected": "✅ MongoDB verbunden",
+    "mongodb_error": "❌ Fehler bei der Verbindung zu MongoDB:",
+    "error_task_not_found": "❌ Aufgabe mit der ID {{id}} nicht gefunden.",
+    "error_no_smtp_connector": "❌ Kein SMTP-Connector für Projekt {{project}} gefunden.",
+    "error_mailbox_open": "❌ Fehler beim Öffnen des Postfachs: {{error}}",
+    "error_processing_email": "❌ Fehler bei der Verarbeitung der E-Mail: {{error}}",
+    "email_sent": "📧 Kommentar zu Aufgabe #{{id}} per E-Mail gesendet.",
+    "email_no_new": "📭 Keine neuen E-Mails",
+    "comments_added": "💬 Kommentar zu Aufgabe #{{id}} hinzugefügt.",
+    "created_task": "🆕 Aufgabe erfolgreich erstellt mit ID #{{id}}.",
+    "error_mailbox_read_status": "❌ Fehler beim Setzen des Gelesen-Status für E-Mail UID {{uid}}: {{error}}",
+    "warning_no_recipient": "⚠️ Keine Empfänger-Adresse für Kommentar {{commentId}}",
+    "warning_no_task_for_comment": "⚠️ Kein zugehöriger Task für Kommentar {{commentId}}",
+    "error_no_smtp_connector": "❌ Kein SMTP-Connector für Projekt {{project}} gefunden.",
+    "email_new_reply_subject": "Neue Antwort zu Ihrem Ticket [#{{ticketNumber}}]",
+    "email_sent_for_comment": "📧 E-Mail zu Kommentar {{commentId}} gesendet.",
+    "error_sending_email": "❌ Fehler beim Senden der E-Mail: {{error}}"
+}

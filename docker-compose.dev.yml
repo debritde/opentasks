@@ -1,0 +1,141 @@
+# AYYO MAIL 2 TICKET BRAUCHT DEN GLEICHEN DATA PFAD WIER API !!!
+version: '3.6'
+services:
+  api:
+    image: sysgrid/opentasks-api
+    build: ./api
+    container_name: ${projectID}-opentasks-api
+    volumes:
+      - ./data/opentasks-api/usr/src/app/data:/usr/src/app/data
+    networks:
+      - openTasks
+    environment:
+      - VITE_APP_API_URL=http://${domain}:3001
+      - VITE_APP_UPDATER_URL=http://${domain}:3002
+      - VITE_APP_DATABASE_TYPE=${VITE_APP_DATABASE_TYPE}
+      - VITE_APP_DATABASE_HOST=${projectID}-opentasks-mongodb
+      - VITE_APP_DATABASE_USER=${VITE_APP_DATABASE_USER}
+      - VITE_APP_DATABASE_PASSWORD=${VITE_APP_DATABASE_PASSWORD}
+      - VITE_APP_DATABASE_NAME=${VITE_APP_DATABASE_NAME}
+    expose:
+      - 3001
+    ports:
+      - 3001:3001
+    depends_on:
+      - mongodb
+
+  mainApp:
+    image: sysgrid/opentasks-mainapp
+    build: 
+      context: ./mainApp
+      args:
+        - VITE_APP_API_URL=http://${domain}:3001
+        - VITE_APP_UPDATER_URL=http://${domain}:3002
+        - VITE_APP_DATABASE_TYPE=${VITE_APP_DATABASE_TYPE}
+        - VITE_APP_DATABASE_HOST=${projectID}-opentasks-mongodb
+        - VITE_APP_DATABASE_USER=${VITE_APP_DATABASE_USER}
+        - VITE_APP_DATABASE_PASSWORD=${VITE_APP_DATABASE_PASSWORD}
+        - VITE_APP_DATABASE_NAME=${VITE_APP_DATABASE_NAME}
+        - VITE_APP_ADMIN_USERNAME=${VITE_APP_ADMIN_USERNAME}
+        - VITE_APP_ADMIN_PASSWORD=${VITE_APP_ADMIN_PASSWORD}
+    container_name: ${projectID}-opentasks-mainApp
+    environment:
+      - VITE_APP_API_URL=http://${domain}:3001
+      - VITE_APP_UPDATER_URL=http://${domain}:3002
+      - VITE_APP_DATABASE_TYPE=${VITE_APP_DATABASE_TYPE}
+      - VITE_APP_DATABASE_HOST=${projectID}-opentasks-mongodb
+      - VITE_APP_DATABASE_USER=${VITE_APP_DATABASE_USER}
+      - VITE_APP_DATABASE_PASSWORD=${VITE_APP_DATABASE_PASSWORD}
+      - VITE_APP_DATABASE_NAME=${VITE_APP_DATABASE_NAME}
+      - VITE_APP_ADMIN_USERNAME=${VITE_APP_ADMIN_USERNAME}
+      - VITE_APP_ADMIN_PASSWORD=${VITE_APP_ADMIN_PASSWORD}
+    networks:
+      - openTasks
+    expose:
+      - 3000
+    ports:
+      - 3000:3000
+    depends_on:
+      - api
+      - updater
+      
+  mongodb:
+    image: mongo
+    container_name: ${projectID}-opentasks-mongodb
+    ports:
+      - 27017:27017
+    environment:
+      - MONGO_INITDB_DATABASE=${VITE_APP_DATABASE_NAME}
+      - MONGO_INITDB_ROOT_USERNAME=${VITE_APP_DATABASE_USER}
+      - MONGO_INITDB_ROOT_PASSWORD=${VITE_APP_DATABASE_PASSWORD}
+    volumes:
+      - ./data/mongodb/data/db:/data/db
+      - ./data/mongodb/data/configdb:/data/configdb
+    networks:
+      - openTasks
+    labels:
+      - traefik.enable=false
+
+  updater:
+    image: sysgrid/opentasks-updater
+    build: 
+      context: ./updater
+    container_name: ${projectID}-opentasks-updater
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock  # Erlaubt Docker-Befehle
+      - ./:/dockerProject  # Mountet das komplette Projekt
+      - ./data/opentasks-api/usr/src/app/data:/usr/src/app/data
+    restart: unless-stopped
+    networks:
+      - openTasks
+    environment:
+      - VITE_APP_API_URL=http://${domain}:3001
+      - VITE_APP_UPDATER_URL=http://${domain}:3002
+      - VITE_APP_DATABASE_TYPE=${VITE_APP_DATABASE_TYPE}
+      - VITE_APP_DATABASE_HOST=${projectID}-opentasks-mongodb
+      - VITE_APP_DATABASE_USER=${VITE_APP_DATABASE_USER}
+      - VITE_APP_DATABASE_PASSWORD=${VITE_APP_DATABASE_PASSWORD}
+      - VITE_APP_DATABASE_NAME=${VITE_APP_DATABASE_NAME}
+      - gitRepo=sysgrid/openTasks
+      - gitApiToken=glpat-JFu6-mPNGABW3akbfNLC
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.${projectID}_openTasksUpdater.rule=Host(`updater.${domain}`)
+      - traefik.http.routers.${projectID}_openTasksUpdater.tls=true
+      - traefik.http.routers.${projectID}_openTasksUpdater.tls.certresolver=lets-encrypt
+      - traefik.port=3002
+      - traefik.docker.network=system_reverseproxy
+    expose:
+      - 3002
+    ports:
+      - 3002:3002
+    depends_on:
+      - mongodb
+
+  mail2ticket:
+    image: sysgrid/opentasks-mail2ticket
+    build: 
+      context: ./mail2ticket
+    container_name: ${projectID}-opentasks-mail2ticket
+    volumes:
+    restart: unless-stopped
+    networks:
+      - openTasks
+    environment:
+      - VITE_APP_API_URL=http://${domain}:3001
+      - VITE_APP_UPDATER_URL=http://${domain}:3002
+      - VITE_APP_DATABASE_TYPE=${VITE_APP_DATABASE_TYPE}
+      - VITE_APP_DATABASE_HOST=${projectID}-opentasks-mongodb
+      - VITE_APP_DATABASE_USER=${VITE_APP_DATABASE_USER}
+      - VITE_APP_DATABASE_PASSWORD=${VITE_APP_DATABASE_PASSWORD}
+      - VITE_APP_DATABASE_NAME=${VITE_APP_DATABASE_NAME}
+      - gitRepo=sysgrid/openTasks
+      - gitApiToken=glpat-JFu6-mPNGABW3akbfNLC
+    labels:
+      - traefik.enable=false
+    depends_on:
+      - mongodb
+      
+networks:
+  openTasks:
+    name: ${projectID}-openTasks

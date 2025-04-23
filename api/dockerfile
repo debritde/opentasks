@@ -1,0 +1,11 @@
+FROM node:latest
+
+WORKDIR /usr/src/app/
+COPY app/. /usr/src/app/
+
+RUN mkdir -p /usr/src/app/data
+
+RUN npm install --force
+RUN npm install -g nodemon
+
+ENTRYPOINT nodemon index.js --ignore ./data

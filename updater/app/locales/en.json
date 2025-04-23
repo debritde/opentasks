@@ -1,0 +1,6 @@
+{
+    "update_successfull": "Update successful! Containers have been rebuilt and restarted.",
+    "update_failed": "Update failed.",
+    "error_getting_github_version": "Error fetching GitHub version.",
+    "update_check_failed": "Update check failed."
+}
