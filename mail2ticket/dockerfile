@@ -6,4 +6,4 @@ COPY app/. /usr/src/app/
 RUN npm install --force
 RUN npm install -g nodemon
 
-ENTRYPOINT nodemon index.js --ignore ./data
+ENTRYPOINT nodemon -x 'index.js || touch index.js' --ignore ./data
