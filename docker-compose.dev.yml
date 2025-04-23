@@ -97,7 +97,7 @@ services:
       - VITE_APP_DATABASE_PASSWORD=${VITE_APP_DATABASE_PASSWORD}
       - VITE_APP_DATABASE_NAME=${VITE_APP_DATABASE_NAME}
       - gitRepo=sysgrid/openTasks
-      - gitApiToken=glpat-JFu6-mPNGABW3akbfNLC
+      - gitApiToken=${gitApiToken}
     labels:
       - traefik.enable=true
       - traefik.http.routers.${projectID}_openTasksUpdater.rule=Host(`updater.${domain}`)
@@ -130,7 +130,7 @@ services:
       - VITE_APP_DATABASE_PASSWORD=${VITE_APP_DATABASE_PASSWORD}
       - VITE_APP_DATABASE_NAME=${VITE_APP_DATABASE_NAME}
       - gitRepo=sysgrid/openTasks
-      - gitApiToken=glpat-JFu6-mPNGABW3akbfNLC
+      - gitApiToken=${gitApiToken}
     labels:
       - traefik.enable=false
     depends_on:
