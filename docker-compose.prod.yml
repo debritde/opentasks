@@ -126,7 +126,6 @@ services:
     build: 
       context: ./mail2ticket
     container_name: ${projectID}-opentasks-mail2ticket
-    volumes:
     restart: unless-stopped
     networks:
       - openTasks
