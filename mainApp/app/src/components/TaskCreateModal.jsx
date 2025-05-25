@@ -35,6 +35,7 @@ const TaskCreateModal = ({ task, onClose }) => {
   const [users, setUsers] = useState([]);
   const [statusOptions, setStatusOptions] = useState([]);
   const [priorityOptions, setPriorityOptions] = useState([]);
+  const [priorityOptionsError, setPriorityOptionsError] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [createdByUserId, setCreatedByUserId] = useState("");
@@ -185,14 +186,41 @@ const TaskCreateModal = ({ task, onClose }) => {
         }
 
         const priorityData = await response.json();
-        const formattedPriorities = priorityData.map((item) => ({
-          value: item.name,
-          label: item.name
-        }));
-        setPriorityOptions(formattedPriorities);
+        if (!priorityData || priorityData.length === 0) {
+          setPriorityOptionsError(
+            <div>
+              {t("no_priority_options_found")}
+              <br />
+              <button
+                className="button-small button-violet"
+                onClick={() => window.open('/admin', '_blank')}
+              >
+                {t("go_to_admin_prios")}
+              </button>
+            </div>
+          );
+          setPriorityOptions([]);
+        } else {
+          setPriorityOptions(priorityData.map((item) => ({
+            value: item.name,
+            label: item.name
+          })));
+          setPriorityOptionsError("");
+        }
       } catch (err) {
-        console.error(err);
-        setError("Fehler beim Laden der Prioritätsoptionen.");
+        setPriorityOptionsError(
+          <div>
+            {t("no_priority_options_found")}
+            <br />
+            <button
+              className="button-small button-violet"
+              onClick={() => window.open('/admin', '_blank')}
+            >
+              {t("go_to_admin_prios")}
+            </button>
+          </div>
+        );
+        setPriorityOptions([]);
       }
     };
 
@@ -316,124 +344,171 @@ const TaskCreateModal = ({ task, onClose }) => {
     fetchProjectCustomFields();
   }, [projectId, token]);
 
+  const handleClose = () => {
+    const hasValues =
+      title.trim() !== "" ||
+      description.trim() !== "" ||
+      assignedUsers.length > 0 ||
+      (customFieldValues && customFieldValues.some(f => f.value && f.value !== ""));
+    if (!hasValues) {
+      onClose();
+    } else {
+      if (window.confirm(t("confirm_close_task_create"))) {
+        onClose();
+      }
+    }
+  };
+
   return (
     <div className="modal-overlay">
       <div className="modal">
         <h2>{task ? t("edit_task") : t("new_task")}</h2>
 
-        {error && <p style={{"color": "red"}}>{error}</p>}
+        {error && <p className="error-message">{error}</p>}
 
-        <input
-          type="text"
-          className="modal-input"
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
-          placeholder={t("title")}
-        />
+        <div className="modal-form">
+          <div className="modal-row">
+            <div className="modal-column">
+              <label>{t("title")}:</label>
+              <input
+                type="text"
+                className="modal-input"
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                placeholder={t("title")}
+              />
+            </div>
+            <div className="modal-column">
+              <label>{t("description")}:</label>
+              <textarea
+                className="modal-input"
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                placeholder={t("description")}
+              />
+            </div>
+          </div>
 
-        <textarea
-          className="modal-input"
-          value={description}
-          onChange={(e) => setDescription(e.target.value)}
-          placeholder={t("description")}
-        />
+          <div className="modal-row">
+            <div className="modal-column">
+              <label>{t("status")}:</label>
+              <Select
+                options={statusOptions}
+                value={statusOptions.find(opt => opt.value === status) || null}
+                onChange={(selectedOption) => setStatus(selectedOption.value)}
+              />
+            </div>
+            <div className="modal-column">
+              <label>{t("priorities")}:</label>
+              {priorityOptionsError ? (
+                <div className="error-message">{priorityOptionsError}</div>
+              ) : (
+                <Select
+                  options={priorityOptions}
+                  value={priorityOptions.find(opt => opt.value === priority) || null}
+                  onChange={(selectedOption) => setPriority(selectedOption.value)}
+                />
+              )}
+            </div>
+          </div>
 
-        <label>{t("assigned_users")}:</label>
-        <Select
-          isMulti
-          options={users}
-          value={assignedUsers.map(user => ({
-            value: user._id || user.value,
-            label: user.label || `${user.firstname} ${user.lastname} (${user.username})`
-          }))}
-          onChange={(newMembers) => setAssignedUsers(newMembers.map(user => ({
-            value: user._id || user.value,
-            label: user.label || `${user.firstname} ${user.lastname} (${user.username})`
-          })))}
-          placeholder={t("choose_assigned_users")}
-        />
+          <div className="modal-row">
+            <div className="modal-column">
+              <label>{t("assigned_users")}:</label>
+              <Select
+                isMulti
+                options={users}
+                value={assignedUsers.map(user => ({
+                  value: user._id || user.value,
+                  label: user.label || `${user.firstname} ${user.lastname} (${user.username})`
+                }))}
+                onChange={(newMembers) => setAssignedUsers(newMembers.map(user => ({
+                  value: user._id || user.value,
+                  label: user.label || `${user.firstname} ${user.lastname} (${user.username})`
+                })))}
+                placeholder={t("choose_assigned_users")}
+              />
+            </div>
+          </div>
 
-        <label>{t("status")}:</label>
-        <Select
-          options={statusOptions}
-          defaultValue="New"
-          value={statusOptions.find(opt => opt.value === status) || null}
-          onChange={(selectedOption) => setStatus(selectedOption.value)}
-        />
+          <div className="modal-row">
+            <div className="modal-column">
+              <label>{t("starts_at")}:</label>
+              <input
+                type="datetime-local"
+                className="modal-input"
+                value={startDate}
+                onChange={(e) => setStartDate(e.target.value)}
+              />
+            </div>
+            <div className="modal-column">
+              <label>{t("ends_at")}:</label>
+              <input
+                type="datetime-local"
+                className="modal-input"
+                value={endDate}
+                onChange={(e) => setEndDate(e.target.value)}
+              />
+            </div>
+          </div>
 
-        <label>{t("priorities")}:</label>
-        <Select
-          options={priorityOptions}
-          value={priorityOptions.find(opt => opt.value === priority) || null}
-          onChange={(selectedOption) => setPriority(selectedOption.value)}
-        />
 
-        <label>{t("starts_at")}:</label>
-        <input
-          type="datetime-local"
-          className="modal-input"
-          value={startDate}
-          onChange={(e) => setStartDate(e.target.value)}
-        />
 
-        <label>{t("ends_at")}:</label>
-        <input
-          type="datetime-local"
-          className="modal-input"
-          value={endDate}
-          onChange={(e) => setEndDate(e.target.value)}
-        />
-        <label>
-          <input
-            type="checkbox"
-            checked={isSubTask}
-            onChange={(e) => setIsSubTask(e.target.checked)}
-          /> {t("is_subtask")}
-        </label>
-        {isSubTask && (
-          <Select
-            options={availableTasks}
-            value={availableTasks.find(t => t.value === parentTaskId) || null}
-            placeholder={t("choose_main_task")}
-            onChange={(option) => {
-              setParentTaskId(option.value);
-              setParentTaskTicketNumber(option.ticketNumber);
-            }}
-          />
-        )}
-
-        <label>{t("attachments")}:</label>
-        <input type="file" multiple onChange={handleFileChange} />
+          <div className="modal-row">
+            <div className="modal-column">
+              <label>
+                <input
+                  type="checkbox"
+                  checked={isSubTask}
+                  onChange={(e) => setIsSubTask(e.target.checked)}
+                /> {t("is_subtask")}
+              </label>
+              {isSubTask && (
+                <Select
+                  options={availableTasks}
+                  value={availableTasks.find(t => t.value === parentTaskId) || null}
+                  placeholder={t("choose_main_task")}
+                  onChange={(option) => {
+                    setParentTaskId(option.value);
+                    setParentTaskTicketNumber(option.ticketNumber);
+                  }}
+                />
+              )}
+            </div>
+            <div className="modal-column">
+              <label>{t("attachments")}:</label>
+              <input type="file" multiple onChange={handleFileChange} />
+            </div>
+          </div>
+        </div>
 
         {projectCustomFields.length > 0 && (
           <div className="custom-fields-section">
             <h3>{t("custom_fields")}</h3>
             {loadingCustomFields ? (
-              <p>Lädt Custom Fields...</p>
+              <p>{t("loading_custom_fields")}</p>
             ) : (
-              <>
-                {projectCustomFields.map(field => (
-                  <div key={field._id} className="custom-field">
-                    <label>{field.title}{field.required ? " *" : ""}:</label>
-                    {field.type === "dropdown" ? (
-                      <Select
-                        options={JSON.parse(field.options).map(option => ({ value: option, label: option }))}
-                      />
-                    ) : (
-                      <input type={field.type} />
+              projectCustomFields.map(field => (
+                <div key={field._id} className="custom-field">
+                  <label>{field.title}{field.required ? " *" : ""}:</label>
+                  {field.type === "dropdown" ? (
+                    <Select
+                      options={JSON.parse(field.options).map(option => ({ value: option, label: option }))}
+                    />
+                  ) : (
+                    <input type={field.type} />
                   )}
-                  </div>
-
-                ))}
-              </>
+                </div>
+              ))
             )}
           </div>
         )}
 
         <div className="modal-actions">
-          <button onClick={onClose} disabled={loading}>{t("close")}</button>
-          &nbsp;
-          <button onClick={handleSubmit} disabled={loading}>
+          <button className="button-red" onClick={handleClose} disabled={loading}>
+            {t("close")}
+          </button>
+          <button className="button-violet" onClick={handleSubmit} disabled={loading}>
             {loading ? t("is_saving") : t("save")}
           </button>
         </div>

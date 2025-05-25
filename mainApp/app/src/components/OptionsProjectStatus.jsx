@@ -14,6 +14,10 @@ const ProjectStatusConfig = () => {
   const [newColor, setNewColor] = useState("#000000");
   const [newIsDone, setNewIsDone] = useState(false);
 
+  // Editier-States
+  const [editIndex, setEditIndex] = useState(null);
+  const [editStatus, setEditStatus] = useState({ name: "", color: "#000000", isDone: false });
+
   useEffect(() => {
     const fetchConfig = async () => {
       const token = localStorage.getItem("token");
@@ -81,6 +85,21 @@ const ProjectStatusConfig = () => {
     }
   };
 
+  const handleEditClick = (index) => {
+    setEditIndex(index);
+    setEditStatus({ ...taskStatuses[index] });
+  };
+
+  const handleEditSave = async () => {
+    const updated = [...taskStatuses];
+    updated[editIndex] = { ...editStatus };
+    await updateConfig(updated);
+    setTaskStatuses(updated);
+    setEditIndex(null);
+  };
+
+  const handleEditCancel = () => setEditIndex(null);
+
   if (loading) return <div>{t("loading_task_status")}</div>;
 
   return (
@@ -92,19 +111,47 @@ const ProjectStatusConfig = () => {
           <span>{t("status_color")}</span>
           <span>{t("mark_as_done")}</span>
           <span>{t("delete")}</span>
+          <span>{t("edit")}</span>
         </div>
         {taskStatuses.length === 0 ? (
           <p>{t("no_task_statuses")}</p>
         ) : (
           <>
-            {taskStatuses.map((status, index) => (
-              <div key={index} className="status-option-card">
-                <span>{status.name}</span>
-                <span style={{ color: status.color }}>{status.color}</span>
-                <span>{status.isDone ? t("☑️") : t("❌")}</span>
-                <button className="button-red" onClick={() => handleDeleteStatus(status)}>
-                  {t("delete")}
-                </button>
+            {taskStatuses.map((status, idx) => (
+              <div className="status-option-card" key={idx}>
+                {editIndex === idx ? (
+                  <>
+                    <input
+                      type="text"
+                      value={editStatus.name}
+                      onChange={e => setEditStatus({ ...editStatus, name: e.target.value })}
+                    />
+                    <input
+                      type="color"
+                      value={editStatus.color}
+                      onChange={e => setEditStatus({ ...editStatus, color: e.target.value })}
+                    />
+                    <input
+                      type="checkbox"
+                      checked={editStatus.isDone}
+                      onChange={e => setEditStatus({ ...editStatus, isDone: e.target.checked })}
+                    />
+                    <button className="button-small" onClick={handleEditSave}>{t("save")}</button>
+                    <button className="button-small" onClick={handleEditCancel}>{t("cancel")}</button>
+                  </>
+                ) : (
+                  <>
+                    <span>{status.name}</span>
+                    <span style={{ color: status.color }}>{status.color}</span>
+                    <span>{status.isDone ? t("☑️") : t("❌")}</span>
+                    <button className="button-red" onClick={() => handleDeleteStatus(status)}>
+                      {t("delete")}
+                    </button>
+                    <button className="button-small" onClick={() => handleEditClick(idx)}>
+                      {t("edit")}
+                    </button>
+                  </>
+                )}
               </div>
             ))}
           </>

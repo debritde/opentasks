@@ -162,100 +162,111 @@ const ProjectView = () => {
   };
 
   const closeTaskCreateModal = () => {
-    if (window.confirm(t("confirm_close_task_create"))) {
       setShowTaskCreateModal(false);
       getTasks(projectId, token)
-    }
   };
 
 
   const updateProjectDetails = async () => {
-    try {
-      //EASTEREGG
-      if (localStorage.easterEggMode == "true" && (!editProject.title || editProject.title == "" || editProject.title == undefined)) {
-        no()
-        setErrorMessage(t("error_title_required"))
-      }
-      else if (!localStorage.easterEggMode && (!editProject.title || editProject.title == "" || editProject.title == undefined)){
-        setErrorMessage(t("error_title_required"))
-      }
-      else {
-        const selectedStatus = projectStatuses.find(status => status.label === editProject.status);
-        const projectIsDone = selectedStatus?.isDone || false;
+  try {
+    // EASTEREGG
+    if (localStorage.easterEggMode == "true" && (!editProject.title || editProject.title == "" || editProject.title == undefined)) {
+      no()
+      setErrorMessage(t("error_title_required"))
+      return;
+    }
+    else if (!localStorage.easterEggMode && (!editProject.title || editProject.title == "" || editProject.title == undefined)){
+      setErrorMessage(t("error_title_required"))
+      return;
+    }
+    // NEU: Beschreibung prüfen
+    if (!editProject.description || editProject.description.trim() === "") {
+      setErrorMessage(t("error_description_required"));
+      return;
+    }
 
-        const response = await fetch(`${apiUrl}/projects/${projectId}`, {
+    // Standardstatus setzen, falls keiner ausgewählt und Statusliste vorhanden
+    let selectedStatus = projectStatuses.find(status => status.label === editProject.status);
+    if (!selectedStatus && projectStatuses.length > 0) {
+      selectedStatus = projectStatuses[0]; // Ersten Status als Fallback nehmen
+    }
+
+    // Wenn keine Status vorhanden, Status auf "offen" oder "open" setzen
+    let statusValue = selectedStatus ? selectedStatus.label : "offen";
+
+    const projectIsDone = selectedStatus?.isDone || false;
+
+    const response = await fetch(`${apiUrl}/projects/${projectId}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json", "Authorization": `${token}` },
+      body: JSON.stringify({
+        title: editProject.title,
+        description: editProject.description,
+        deadline: editProject.deadline,
+        members: selectedMembers.map(member => member.value),
+        isServiceDesk: editProject.isServiceDesk,
+        isDone: projectIsDone,
+        status: statusValue
+      })
+    });
+    const data = await response.json();
+    if (data.status === "success") {
+      setProject(data.project);
+      setIsEditing(false);
+  
+      if ((project.isServiceDesk !== editProject.isServiceDesk) && (editProject.isServiceDesk == true)) {
+        await fetch(`${apiUrl}/mail2ticket`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "Authorization": `${token}` },
+          body: JSON.stringify({
+            projects: [data.project._id],
+            imapHost: editProject.imapHost,
+            imapPort: editProject.imapPort,
+            imapUser: editProject.imapUser,
+            imapPassword: editProject.imapPassword,
+            emailAddress: editProject.emailAddress,
+            checkPeriodInMinutes: editProject.checkPeriodInMinutes,
+            smtpHost: editProject.smtpHost,
+            smtpPort: editProject.smtpPort,
+            smtpUser: editProject.smtpUser,
+            smtpPassword: editProject.smtpPassword,
+            smtpSecure: editProject.smtpSecure
+          })
+        });
+      }
+      else if ((project.isServiceDesk == editProject.isServiceDesk) && (editProject.isServiceDesk == true)) {
+        await fetch(`${apiUrl}/mail2ticket/${project.mail2ticketConnectorId}`, {
           method: "PUT",
           headers: { "Content-Type": "application/json", "Authorization": `${token}` },
           body: JSON.stringify({
-            title: editProject.title,
-            description: editProject.description,
-            deadline: editProject.deadline,
-            members: selectedMembers.map(member => member.value),
-            isServiceDesk: editProject.isServiceDesk,
-            isDone: projectIsDone,
-            status: selectedStatus.label
+            projects: [data.project._id],
+            imapHost: editProject.imapHost,
+            imapPort: editProject.imapPort,
+            imapUser: editProject.imapUser,
+            imapPassword: editProject.imapPassword,
+            emailAddress: editProject.emailAddress,
+            checkPeriodInMinutes: editProject.checkPeriodInMinutes,
+            smtpHost: editProject.smtpHost,
+            smtpPort: editProject.smtpPort,
+            smtpUser: editProject.smtpUser,
+            smtpPassword: editProject.smtpPassword,
+            smtpSecure: editProject.smtpSecure
           })
         });
-        const data = await response.json();
-        if (data.status === "success") {
-          setProject(data.project);
-          setIsEditing(false);
-  
-          if ((project.isServiceDesk !== editProject.isServiceDesk) && (editProject.isServiceDesk == true)) {
-            await fetch(`${apiUrl}/mail2ticket`, {
-              method: "POST",
-              headers: { "Content-Type": "application/json", "Authorization": `${token}` },
-              body: JSON.stringify({
-                projects: [data.project._id],
-                imapHost: editProject.imapHost,
-                imapPort: editProject.imapPort,
-                imapUser: editProject.imapUser,
-                imapPassword: editProject.imapPassword,
-                emailAddress: editProject.emailAddress,
-                checkPeriodInMinutes: editProject.checkPeriodInMinutes,
-                smtpHost: editProject.smtpHost,
-                smtpPort: editProject.smtpPort,
-                smtpUser: editProject.smtpUser,
-                smtpPassword: editProject.smtpPassword,
-                smtpSecure: editProject.smtpSecure
-              })
-            });
-          }
-          else if ((project.isServiceDesk == editProject.isServiceDesk) && (editProject.isServiceDesk == true)) {
-            await fetch(`${apiUrl}/mail2ticket/${project.mail2ticketConnectorId}`, {
-              method: "PUT",
-              headers: { "Content-Type": "application/json", "Authorization": `${token}` },
-              body: JSON.stringify({
-                projects: [data.project._id],
-                imapHost: editProject.imapHost,
-                imapPort: editProject.imapPort,
-                imapUser: editProject.imapUser,
-                imapPassword: editProject.imapPassword,
-                emailAddress: editProject.emailAddress,
-                checkPeriodInMinutes: editProject.checkPeriodInMinutes,
-                smtpHost: editProject.smtpHost,
-                smtpPort: editProject.smtpPort,
-                smtpUser: editProject.smtpUser,
-                smtpPassword: editProject.smtpPassword,
-                smtpSecure: editProject.smtpSecure
-              })
-            });
-          }
-          else if (project.isServiceDesk == true && editProject.isServiceDesk == false) {
-            await fetch(`${apiUrl}/mail2ticket/${project.mail2ticketConnectorId}`, {
-              method: "DELETE",
-              headers: { "Content-Type": "application/json", "Authorization": `${token}` },
-            });
-          }
-        } else {
-          console.error("Fehler beim Aktualisieren des Projekts", data.message);
-        }
-
       }
-      
-    } catch (error) {
-      console.error("Fehler beim Aktualisieren des Projekts", error);
+      else if (project.isServiceDesk == true && editProject.isServiceDesk == false) {
+        await fetch(`${apiUrl}/mail2ticket/${project.mail2ticketConnectorId}`, {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json", "Authorization": `${token}` },
+        });
+      }
+    } else {
+      console.error("Fehler beim Aktualisieren des Projekts", data.message);
     }
+
+  } catch (error) {
+    console.error("Fehler beim Aktualisieren des Projekts", error);
+  }
   };
   
 

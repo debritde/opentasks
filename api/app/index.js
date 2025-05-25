@@ -385,7 +385,6 @@ console.log(lockFilePath)
     }
 });
 
-
 // ✅ **LOGIN (E-Mail/Passwort oder LDAP)**
 app.use(express.json());
 
@@ -691,6 +690,32 @@ app.put('/ownUser/update', async (req, res) => {
     }
 });
 
+// Passwort ändern (Eigenes Benutzerprofil)
+app.post('/ownUser/change-password', async (req, res) => {
+    try {
+        const token = req.headers['authorization'];
+        if (!token) {
+            return res.status(401).json({ status: "error", message: req.t('token_required') });
+        }
+        const decoded = jwt.verify(token, JWT_SECRET);
+        const user = await User.findById(decoded.id);
+        if (!user) {
+            return res.status(404).json({ status: "error", message: req.t('user_not_found') });
+        }
+        const { currentPassword, newPassword } = req.body;
+        if (!currentPassword || !newPassword) {
+            return res.status(400).json({ status: "error", message: req.t('fill_all_password_fields') });
+        }
+        if (user.password !== currentPassword) {
+            return res.status(400).json({ status: "error", message: req.t('password_wrong') });
+        }
+        user.password = newPassword;
+        await user.save();
+        res.json({ status: "success", message: req.t('password_changed_success') });
+    } catch (error) {
+        res.status(500).json({ status: "error", message: req.t('error_updating_user'), error: error.message });
+    }
+});
 
 // Fremden Benutzer aktualisieren
 app.put('/user/update/:id', async (req, res) => {
@@ -1355,7 +1380,6 @@ app.delete('/tasks/:id/remove-user', async (req, res) => {
         res.status(500).json({ status: 'error', message: req.t('error_removing_user'), error: error.message });
     }
 });
-
 
 // **Task-Status aktualisieren**
 app.patch('/tasks/:id/status', async (req, res) => {
@@ -2072,7 +2096,6 @@ app.delete("/config/:configName", async (req, res) => {
         res.status(500).json({ message: "Fehler beim Löschen der Konfiguration", error: error.message });
     }
 });
-
 
 // **Task Custom Field erstellen**
 app.post('/customFields/tasks', async (req, res) => {

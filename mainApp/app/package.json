@@ -21,6 +21,7 @@
     "bcryptjs": "^2.4.3",
     "buffer": "^6.0.3",
     "Buffer": "^0.0.0",
+    "chroma-js": "^3.1.2",
     "dompurify": "^3.2.4",
     "easter-egg-collection": "^1.4.56",
     "frappe-gantt-react": "^0.2.2",

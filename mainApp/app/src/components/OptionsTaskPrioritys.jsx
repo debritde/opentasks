@@ -5,7 +5,6 @@ import "../i18n";
 
 const apiUrl = import.meta.env.VITE_APP_API_URL || "http://localhost:3001";
 
-
 const TaskPriorityConfig = () => {
   const { t } = useTranslation();
   const [kanbanIndex, setKanbanIndex] = useState([]);
@@ -14,6 +13,10 @@ const TaskPriorityConfig = () => {
   const [newPriority, setNewPriority] = useState("");
   const [newColor, setNewColor] = useState("#000000");
   const [newIsCritical, setNewIsCritical] = useState(false);
+
+  // Editier-States
+  const [editIndex, setEditIndex] = useState(null);
+  const [editPriority, setEditPriority] = useState({ name: "", color: "#000000", kanbanIndex: 0, isCritical: false });
 
   useEffect(() => {
     const fetchConfig = async () => {
@@ -58,6 +61,21 @@ const TaskPriorityConfig = () => {
     await updateConfig(updatedPriorities);
   };
 
+  // Editierfunktionen
+  const handleEditClick = (index) => {
+    setEditIndex(index);
+    setEditPriority({ ...taskPriorities[index] });
+  };
+
+  const handleEditSave = async () => {
+    const updated = [...taskPriorities];
+    updated[editIndex] = { ...editPriority };
+    await updateConfig(updated);
+    setEditIndex(null);
+  };
+
+  const handleEditCancel = () => setEditIndex(null);
+
   const updateConfig = async (priorities) => {
     const token = localStorage.getItem("token");
     if (!token) return;
@@ -70,7 +88,7 @@ const TaskPriorityConfig = () => {
           "Authorization": `${token}`
         },
         body: JSON.stringify({
-          configName: "taskPrioritys",
+          configName: "taskPriorities",
           configValue: priorities
         })
       });
@@ -94,6 +112,7 @@ const TaskPriorityConfig = () => {
           <span>{t("kanban_order_position")}</span>
           <span>{t("mark_as_critical")}</span>
           <span>{t("delete")}</span>
+          <span>{t("edit")}</span>
         </div>
         {taskPriorities.length === 0 ? (
           <p>{t("no_task_priorities")}</p>
@@ -101,13 +120,45 @@ const TaskPriorityConfig = () => {
           <>
             {taskPriorities.map((priority, index) => (
               <div key={index} className="status-option-card">
-                <span>{priority.name}</span>
-                <span style={{ color: priority.color }}>{priority.color}</span>
-                <span>{priority.kanbanIndex}</span>
-                <span>{priority.isCritical ? t("☑️") : t("❌")}</span>
-                <button className="button-red" onClick={() => handleDeletePriority(priority)}>
-                  {t("delete")}
-                </button>
+                {editIndex === index ? (
+                  <>
+                    <input
+                      type="text"
+                      value={editPriority.name}
+                      onChange={e => setEditPriority({ ...editPriority, name: e.target.value })}
+                    />
+                    <input
+                      type="color"
+                      value={editPriority.color}
+                      onChange={e => setEditPriority({ ...editPriority, color: e.target.value })}
+                    />
+                    <input
+                      type="number"
+                      value={editPriority.kanbanIndex}
+                      onChange={e => setEditPriority({ ...editPriority, kanbanIndex: e.target.value })}
+                    />
+                    <input
+                      type="checkbox"
+                      checked={editPriority.isCritical}
+                      onChange={e => setEditPriority({ ...editPriority, isCritical: e.target.checked })}
+                    />
+                    <button className="button-small" onClick={handleEditSave}>{t("save")}</button>
+                    <button className="button-small" onClick={handleEditCancel}>{t("cancel")}</button>
+                  </>
+                ) : (
+                  <>
+                    <span>{priority.name}</span>
+                    <span style={{ color: priority.color }}>{priority.color}</span>
+                    <span>{priority.kanbanIndex}</span>
+                    <span>{priority.isCritical ? t("☑️") : t("❌")}</span>
+                    <button className="button-red" onClick={() => handleDeletePriority(priority)}>
+                      {t("delete")}
+                    </button>
+                    <button className="button-small" onClick={() => handleEditClick(index)}>
+                      {t("edit")}
+                    </button>
+                  </>
+                )}
               </div>
             ))}
           </>
@@ -138,9 +189,9 @@ const TaskPriorityConfig = () => {
             onChange={(e) => setNewIsCritical(e.target.checked)}
           />
           <button onClick={handleAddPriority}>{t("add_priority")}</button>
+        </div>
       </div>
     </div>
-  </div>
   );
 };
 

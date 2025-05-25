@@ -19,6 +19,7 @@ const TaskViewModal = ({ task, onClose }) => {
   const [description, setDescription] = useState(task ? task.description : "");
   const [assignedUsers, setAssignedUsers] = useState(task ? task.assignedUsers : []);
   const [status, setStatus] = useState({name: task.status || ""});
+  const [currentStatus, setCurrentStatus] = useState(task.status);
   const [priority, setPriority] = useState({name: task.priority || ""});
   const [attachments, setAttachments] = useState([]);
   const [startDate, setStartDate] = useState(task ? new Date(task.startDate): "");
@@ -50,6 +51,7 @@ const TaskViewModal = ({ task, onClose }) => {
   const [projectCustomFields, setProjectCustomFields] = useState([]);
   const [mergedCustomFields, setMergedCustomFields] = useState([]);
   const [loadingCustomFields, setLoadingCustomFields] = useState(true);
+  const [commentSortOrder, setCommentSortOrder] = useState("desc");
 
 
   const token = localStorage.getItem("token");
@@ -72,6 +74,12 @@ const TaskViewModal = ({ task, onClose }) => {
   useEffect(() => {
     fetchTimeEntries();
   }, [task, timeEntries]);
+
+  useEffect(() => {
+    console.log("status")
+    console.log(status)
+    setCurrentStatus(status);
+  }, [status]);
 
   useEffect(() => {
     const storedTracking = JSON.parse(localStorage.getItem("trackingTimes")) || {};
@@ -267,9 +275,12 @@ const TaskViewModal = ({ task, onClose }) => {
     })
     .then((res) => res.json())
     .then((data) => {
-      setPriorities(data || {});
+      setPriorities(Array.isArray(data) ? data : []);
     })
-    .catch((err) => console.error("Fehler beim Laden der Prioritätskonfiguration:", err));
+    .catch((err) => {
+      console.error("Fehler beim Laden der Prioritätskonfiguration:", err);
+      setPriorities([]); // Fallback auf leeres Array bei Fehler
+    });
     
     (getComments(task))
   }, [task]);
@@ -310,11 +321,28 @@ const TaskViewModal = ({ task, onClose }) => {
               return comment;
             })
           );
-          setComments(commentsWithUserInfo.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)));
+          // Sortierung nach aktuellem State
+          const sorted = [...commentsWithUserInfo].sort((a, b) =>
+            commentSortOrder === "desc"
+              ? new Date(b.createdAt) - new Date(a.createdAt)
+              : new Date(a.createdAt) - new Date(b.createdAt)
+          );
+          setComments(sorted);
         }
       })
       .catch((err) => console.error("Fehler beim Laden der Kommentare:", err));
   }
+
+  // Kommentare neu sortieren, wenn sich die Sortierrichtung ändert
+  useEffect(() => {
+    setComments(prev =>
+      [...prev].sort((a, b) =>
+        commentSortOrder === "desc"
+          ? new Date(b.createdAt) - new Date(a.createdAt)
+          : new Date(a.createdAt) - new Date(b.createdAt)
+      )
+    );
+  }, [commentSortOrder]);
 
   const handleAddComment = () => {
     const token = localStorage.getItem("token");
@@ -644,176 +672,92 @@ const TaskViewModal = ({ task, onClose }) => {
     <div className="modal-overlay">
       <div className="modal">
         <button onClick={onClose} className="modal-close">✕</button>
-        <button className="button-small" onClick={() => setEditMode(!editMode)}>{editMode ? t("finish") : t("edit")}</button>
-        <button className="button-small" onClick={() => setShowTimeTrackingCreate(!showTimeTrackingCreate)}>{t("time_tracking")}</button>
+        <h2>{t("view_task")}</h2>
 
-        <Collapse isOpened={showTimeTrackingCreate}>
-          <div className="time-entry-create">
-            <span>Startzeit: {startTime ? startTime.toLocaleTimeString() : "-"}</span>
-            <span>Verstrichene Zeit: {elapsedTime}</span>
-            <textarea 
-              value={timeTrackingDescription} 
-              onChange={(e) => setTimeTrackingDescription(e.target.value)}
-              placeholder={t("enter_description")}
-            />
-            <div className="buttons">
-              <button onClick={startTracking} disabled={tracking}>{t("start")}</button>
-              <button onClick={stopTracking} disabled={!tracking}>{t("stop")}</button>
-              <button onClick={saveTracking} disabled={!startTime || !endTime}>{t("save")}</button>
+        {error && <p className="error-message">{error}</p>}
+
+        <div className="modal-form">
+          <div className="modal-row">
+            <div className="modal-column">
+              <label>{t("title")}:</label>
+              {editMode ? (
+                <input
+                  type="text"
+                  className="modal-input"
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  onBlur={() => updateTask("title", title)}
+                />
+              ) : (
+                <p>{title}</p>
+              )}
+            </div>
+            <div className="modal-column">
+              <label>{t("description")}:</label>
+              {editMode ? (
+                <textarea
+                  className="modal-input"
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  onBlur={() => updateTask("description", description)}
+                  rows={4}
+                />
+              ) : (
+                <p style={{ whiteSpace: "pre-line" }}>{description}</p>
+              )}
             </div>
           </div>
-        </Collapse>
-        <ul className="time-entry-list">
-          {timeEntries.map(entry => (
-            <li key={entry._id} className="time-entry-item">
-              <button className="button-small" onClick={() => toggleEntryExpansion(entry._id)}>{t("show_details")}</button>
-              {entry.duration} {t("minutes_short")} - {entry.description && entry.description.length > 10 ? entry.description.substring(0, 10) + "..." : entry.description}
-              <div className="time-entry-details">
-                <Collapse isOpened={!!expandedEntries[entry._id]}>
-                  <table className="modal-table">
-                    <tr>
-                      <td>
-                        {t("start")}
-                      </td>
-                      <td>
-                        {new Date(entry.startTime).toLocaleString()}
-                      </td>
-                    </tr>
-                    <tr>
-                      <td>
-                        {t("end")}
-                      </td>
-                      <td>
-                        {new Date(entry.endTime).toLocaleString()}
-                      </td>
-                    </tr>
-                    <tr>
-                      <td>
-                        {t("duration")}
-                      </td>
-                      <td>
-                        {entry.duration} {t("minutes_short")}
-                      </td>
-                    </tr>
-                    <tr>
-                      <td>
-                        {t("description")}
-                      </td>
-                      <td>
-                        {entry.description}
-                      </td>
-                    </tr>
-                    <button className="button-red button-small" onClick={() => deleteTimeEntry(entry._id)} style={{ alignSelf: "center" }}>{t("delete")}</button>
-                  </table>
-                </Collapse>
+
+          <div className="modal-row">
+            <div className="modal-column">
+                <label>{t("status")}:</label>
+                <div style={{ display: "flex", flexDirection: "row", alignItems: "center", gap: "10px" }}>
+                  <div  
+                    className="status-color-indicator"
+                    style={{
+                      backgroundColor: statuses.find(s => s.name === status.name)?.color,
+                    }}
+                  ></div>
+                  <Select
+                    options={statuses.map(s => ({ value: s.name, label: s.name, isDone: s.isDone }))}
+                    value={status.name}
+                    placeholder={status.name}
+                    onChange={(option) => {
+                      setStatus(option);
+                      updateTask("status", option.value);
+                      updateTask("isDone", option.isDone);
+                    }}
+                    isDisabled={false}
+                  />
+                </div>
               </div>
-            </li>
-          ))}
-        </ul>
-        <h2>
-          {editMode ? 
-            <input
-              type="text"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              onBlur={() => updateTask("title", title)}
-            />
-          :
-            title
-          }
-        </h2>
-        <table className="modal-table">
-          <tbody>
-            <tr>
-              <td><strong>{t("task_id")}:</strong></td>
-              <td>{task.ticketNumber || "Wenn hier keine TIcketnummer steht ist irgendwas ganz gewaltig am Arsch Bruder"}</td>
-            </tr>
-            <tr>
-              <td><strong>{t("description")}:</strong></td>
-              {editMode ? 
-              <input
-                type="text"
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                onBlur={() => updateTask("description", description)}
-                />
-              :
-                <td dangerouslySetInnerHTML={{__html: DOMPurify.sanitize(description)}}></td>
-              }
-
-            </tr>
-            <tr>
-              <td><strong>{t("created_at")}:</strong></td>
-              <td>{new Date(createdAt).toLocaleString()}</td>
-            </tr>
-            <tr>
-              <td><strong>{t("last_changed")}:</strong></td>
-              <td>{new Date(task.updatedAt).toLocaleString()}</td>
-            </tr>
-            <tr>
-              <td><strong>{t("created_by")}:</strong></td>
-              <td>{ createdByUserId ? `${createdByFirstname} ${createdByLastname} (${createdByUsername}) ${createdByEmailAddress ? "// " + createdByEmailAddress : ""}` : createdByEmailAddress} </td>
-            </tr>
-
-              <tr>
-                <td><strong>{t("starts_at")}:</strong></td>
-                {editMode ? 
-                  <input
-                    type="date"
-                    value={startDate}
-                    onChange={(e) => setStartDate(e.target.value)}
-                    onBlur={() => updateTask("startDate", startDate)}
-                  />
-                :
-                  <td>{startDate ? new Date(startDate).toLocaleString() : "Kein Datum"}</td>
-                }
-              </tr>
-              <tr>
-                <td><strong>{t("ends_at")}:</strong></td>
-                {editMode ? 
-                  <input
-                    type="date"
-                    value={endDate}
-                    onChange={(e) => setEndDate(e.target.value)}
-                    onBlur={() => updateTask("endDate", endDate)}
-                  />
-                :
-                  <td>{new Date(task.endDate).toLocaleString()}</td>
-                }
-
-                </tr>
-
-            <tr>
-              <td><strong>{t("status")}:</strong></td>
-              <td>
-              <Select
-                options={statuses.map(s => ({ value: s.name, label: s.name, isDone: s.isDone }))}
-                value={status.name}
-                placeholder={status.name}
-                onChange={(option) => {
-                  setStatus(statuses.find(s => s.name === option.value) || {});
-                  updateTask("status", option.value);
-                  updateTask("isDone", option.isDone);
-                }}
-              />
-
-
-              </td>
-            </tr>
-            <tr>
-              <td><strong>{t("priority")}:</strong></td>
-              <td>
+              <div className="modal-column">
+              <label>{t("priorities")}:</label>
+              {Array.isArray(priorities) && priorities.length > 0 ? (
                 <Select
-                  options={priorities.length > 0 ? priorities.map(p => ({ value: p.name, label: p.name })) : []}
-                  value={priorities.length > 0 && priorities.find(p => p.name === priority) ? { value: priority, label: priority } : null}
-                  placeholder={priority?.name || "Select priority"}
-                  onChange={(option) => updateTask("priority", option?.value)}
+                  options={priorities.map(p => ({ value: p.name, label: p.name }))}
+                  value={priorities.find(p => p.name === priority.name) || null}
+                  onChange={(option) => updateTask("priority", option.value)}
+                  isDisabled={!editMode}
                 />
-              </td>
-            </tr>
-            <tr>
-              <td><strong>{t("assigned_users")}:</strong></td>
-              <td>
+              ) : (
+                <div className="error-message">
+                  {t("no_priority_options_found")}
+                  <br />
+                  <button
+                    className="button-small button-violet"
+                    onClick={() => window.open('/admin', '_blank')}
+                  >
+                    {t("go_to_admin_prios")}
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="modal-row">
+            <div className="modal-column">
+              <label>{t("assigned_users")}:</label>
                 <Select
                   isMulti
                   options={users}
@@ -823,146 +767,52 @@ const TaskViewModal = ({ task, onClose }) => {
                   }))}
                   onChange={updateTaskMembers}
                   placeholder={t("choose_assigned_users")}
+                  isDisabled={true}
                 />
-              </td>
-            </tr>
-            <tr className="attachment-list">
-            <td><strong>{t("attachments")}:</strong></td>
-              <td>
-                {attachments.length > 0 ? (
-                  attachments.map((attachment) => (
-                    <li key={attachment.fileId} className="attachment-item">
-                      <a href={`${apiUrl}/files/${attachment.fileId}`} target="_blank" rel="noopener noreferrer">
-                        {attachment.filename}
-                      </a>
-                    </li>
-                  ))
-                ) : (
-                  t("no_attachments")
-                )}
-              </td>
-            </tr>
 
-        <tr>
-          <td colSpan="2" style={{"textAlign": "center"}}>{t("custom_fields")}</td>
-          </tr>
-        {loadingCustomFields ? (
-          <p>Lädt Custom Fields...</p>
-        ) : mergedCustomFields && mergedCustomFields.length > 0 ? (
-            <>
-              {mergedCustomFields.map((field, index) => (
-                <tr key={field._id || index}>
-                  <td><strong>{field.title || "Field"}</strong>:{" "}</td>
-                  <td>
-                    {editMode ? (
-                        field.type === "dropdown" ? (
-                          <Select
-                            options={(JSON.parse(field.options) || []).map(option => ({ value: option, label: option }))}
-                            value={(JSON.parse(field.options) || []).find(option => option === field.value) ? { value: field.value, label: field.value } : null}
-                            onChange={(selectedOption) => updateCustomField(index, field.title, selectedOption ? selectedOption.value : "")}
-                          />
-                        ) : field.type === "checkbox" ? (
-                          <input
-                            type="checkbox"
-                            checked={field.value || false}
-                            onChange={(e) => updateCustomField(index, field.title, e.target.checked)}
-                          />
-                        ) : (
-                          <input
-                            type={field.type}
-                            value={field.value || ""}
-                            onChange={(e) => updateCustomField(index, field.title, e.target.value)}
-                          />
-                        )
-                      ) : (
-                        field.type === "checkbox" ? (
-                          <span>{field.value === true ? t("yes") : t("no")}</span>
-                        ) : (
-                          <span>{field.value}</span>
-                        )
-                      )}
-                  </td>
-                </tr>
-              ))}
-            </>
-            ) : (
-              <p>{t("no_custom_fields_available")}</p>
-            )}
-            </tbody>
-            </table>
+            </div>
+          </div>
 
-        <div className="comment-input-container">
-          <h4>{t("new_comment")}</h4>
-          <textarea className="comment-input" value={newComment} onChange={(e) => setNewComment(e.target.value)} placeholder={t("add_comment") + "..."} />
-          {project?.isServiceDesk && (
-            <>
-              <label>
+          <div className="modal-row">
+            <div className="modal-column">
+              <label>{t("starts_at")}:</label>
+              {editMode ? (
                 <input
-                  type="checkbox"
-                  checked={sendByMail}
-                  onChange={() => setSendByMail(!sendByMail)}
+                  type="datetime-local"
+                  className="modal-input"
+                  value={startDate}
+                  onChange={(e) => setStartDate(e.target.value)}
+                  onBlur={() => updateTask("startDate", startDate)}
                 />
-                {t("send_comment_via_email")}
-              </label>
-              {sendByMail && (
-                <input
-                  type="email"
-                  className="email-input"
-                  value={sendToEmailAddress}
-                  onChange={(e) => setSendToEmailAddress(e.target.value)}
-                  placeholder="E-Mail-Adresse"
-                />
-              )}
-            </>
-          )}
-          <button onClick={handleAddComment} className="button-violet">{t("add_comment")}</button>
-        </div>
-
-        <h3>{t("comments")}</h3>
-        <ul className="comment-list">
-          {comments.map((comment) => (
-            <li key={comment._id} className="comment-item">
-              <div className="comment-item-text">{comment.commentText}</div>
-              <div className="comment-item-meta">
-              <p style={{ fontSize: "12px", color: "#666" }}>{t("created_at")}: {new Date(comment.createdAt).toLocaleString()}</p>
-              <p style={{ fontSize: "12px", color: "#666" }}>
-              {t("created_by")}: 
-                {comment.createdByUserId 
-                  ? `${comment.createdByFirstname && comment.createdByFirstname !== "undefined" ? comment.createdByFirstname + " " : ""} 
-                    ${comment.createdByLastname && comment.createdByLastname !== "undefined" ? comment.createdByLastname + " " : ""}`.replace("undefined", "") + 
-                    (comment.createdByUsername ? ` (${comment.createdByUsername})` : "")
-                  : comment.createdByEmailAddress || "Unbekannt"}
-              </p>
-
-
-
-
-
-              {comment.emailAddress && <p style={{ fontSize: "12px", color: "#666" }}>{t("sent_to")}: {comment.emailAddress}</p>}
-              {comment.sendByMail && (
-                <span 
-                  className="mail-send-badge" 
-                  style={{ 
-                    backgroundColor: comment.mailSent ? "green" : "red", 
-                    color: "white", 
-                    padding: "4px 8px", 
-                    borderRadius: "4px", 
-                    fontSize: "12px", 
-                    fontWeight: "bold" 
-                  }}
-                >
-                  {comment.mailSent ? t("mail_sent") : t("mail_not_sent")}
-                </span>
+              ) : (
+                <p>{startDate ? new Date(startDate).toLocaleString() : t("no_date")}</p>
               )}
             </div>
-          </li>
-          ))}
-        </ul>
-
+            <div className="modal-column">
+              <label>{t("ends_at")}:</label>
+              {editMode ? (
+                <input
+                  type="datetime-local"
+                  className="modal-input"
+                  value={endDate}
+                  onChange={(e) => setEndDate(e.target.value)}
+                  onBlur={() => updateTask("endDate", endDate)}
+                />
+              ) : (
+                <p>{endDate ? new Date(endDate).toLocaleString() : t("no_date")}</p>
+              )}
+            </div>
+          </div>            
+        </div>
 
         <div className="modal-actions">
-          <button onClick={onClose}>{t("close")}</button>
-          <button onClick={handleDeleteTask} className="button-delete">{t("delete_task")}</button>
+          <button onClick={onClose} className="button-red">{t("close")}</button>
+          {editMode && (
+            <button onClick={handleDeleteTask} className="button-red">{t("delete_task")}</button>
+          )}
+          <button onClick={() => setEditMode(!editMode)} className="button-violet">
+            {editMode ? t("finish") : t("edit")}
+          </button>
         </div>
       </div>
     </div>

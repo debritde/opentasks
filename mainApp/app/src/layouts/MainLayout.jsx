@@ -96,7 +96,8 @@ const NavBar = () => {
 
       <div id="content-wrapper">
         <div id="top-bar">
-          <input onChange={(e) => setSearchQuery(e.target.value)} placeholder={t("search_placeholder")} />
+          <input type="hidden" value="noautocompletion" />
+          <input onChange={(e) => setSearchQuery(e.target.value)} placeholder={t("search_placeholder")} autoComplete="off" name="search"/>
           <Link to={`/ownUser`}>{user && <span className="user-info">👤 {user.username}</span>}</Link>
         </div>
         <div id="content">

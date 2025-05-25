@@ -13,6 +13,8 @@ const TaskStatusConfig = () => {
   const [newStatus, setNewStatus] = useState("");
   const [newColor, setNewColor] = useState("#000000");
   const [newIsDone, setNewIsDone] = useState(false);
+  const [editIndex, setEditIndex] = useState(null);
+  const [editStatus, setEditStatus] = useState({ name: "", color: "#000000", kanbanIndex: 0, isDone: false });
 
   useEffect(() => {
     const fetchConfig = async () => {
@@ -81,6 +83,22 @@ const TaskStatusConfig = () => {
     }
   };
 
+  const handleEditClick = (index) => {
+    setEditIndex(index);
+    setEditStatus({ ...taskStatuses[index] });
+  };
+
+  const handleEditSave = async () => {
+    const updatedStatuses = [...taskStatuses];
+    updatedStatuses[editIndex] = { ...editStatus };
+    await updateConfig(updatedStatuses);
+    setEditIndex(null);
+  };
+
+  const handleEditCancel = () => {
+    setEditIndex(null);
+  };
+
   if (loading) return <div>{t("loading_task_status")}</div>;
 
   return (
@@ -93,6 +111,7 @@ const TaskStatusConfig = () => {
           <span>{t("kanban_order_position")}</span>
           <span>{t("mark_as_done")}</span>
           <span>{t("delete")}</span>
+          <span>{t("edit")}</span>
         </div>
         {taskStatuses.length === 0 ? (
           <p>{t("no_task_statuses")}</p>
@@ -100,13 +119,45 @@ const TaskStatusConfig = () => {
           <>
             {taskStatuses.map((status, index) => (
               <div key={index} className="status-option-card">
-                <span>{status.name}</span>
-                <span style={{ color: status.color }}>{status.color}</span>
-                <span>{status.kanbanIndex}</span>
-                <span>{status.isDone ? t("☑️") : t("❌")}</span>
-                <button className="button-red" onClick={() => handleDeleteStatus(status)}>
-                  {t("delete")}
-                </button>
+                {editIndex === index ? (
+                  <>
+                    <input
+                      type="text"
+                      value={editStatus.name}
+                      onChange={e => setEditStatus({ ...editStatus, name: e.target.value })}
+                    />
+                    <input
+                      type="color"
+                      value={editStatus.color}
+                      onChange={e => setEditStatus({ ...editStatus, color: e.target.value })}
+                    />
+                    <input
+                      type="number"
+                      value={editStatus.kanbanIndex}
+                      onChange={e => setEditStatus({ ...editStatus, kanbanIndex: e.target.value })}
+                    />
+                    <input
+                      type="checkbox"
+                      checked={editStatus.isDone}
+                      onChange={e => setEditStatus({ ...editStatus, isDone: e.target.checked })}
+                    />
+                    <button className="button-small" onClick={handleEditSave}>{t("save")}</button>
+                    <button className="button-small" onClick={handleEditCancel}>{t("cancel")}</button>
+                  </>
+                ) : (
+                  <>
+                    <span>{status.name}</span>
+                    <span style={{ color: status.color }}>{status.color}</span>
+                    <span>{status.kanbanIndex}</span>
+                    <span>{status.isDone ? t("☑️") : t("❌")}</span>
+                    <button className="button-red" onClick={() => handleDeleteStatus(status)}>
+                      {t("delete")}
+                    </button>
+                    <button className="button-small" onClick={() => handleEditClick(index)}>
+                      {t("edit")}
+                    </button>
+                  </>
+                )}
               </div>
             ))}
           </>

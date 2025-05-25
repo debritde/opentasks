@@ -116,7 +116,16 @@ const Projects = () => {
     fetchUsers();
   }, []);
 
-  const handleCreateProject = async (e) => {
+  const handleCreateProject = async () => {
+    if (!newProject.title || newProject.title.trim() === "") {
+      setErrorMessage(t("error_title_required"));
+      return;
+    }
+    if (!newProject.description || newProject.description.trim() === "") {
+      setErrorMessage(t("error_description_required"));
+      return;
+    }
+
     const token = localStorage.getItem("token");
     if (!token) return;
 
