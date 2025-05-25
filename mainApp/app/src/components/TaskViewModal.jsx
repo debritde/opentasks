@@ -20,7 +20,7 @@ const TaskViewModal = ({ task, onClose }) => {
   const [assignedUsers, setAssignedUsers] = useState(task ? task.assignedUsers : []);
   const [status, setStatus] = useState({name: task.status || ""});
   const [currentStatus, setCurrentStatus] = useState(task.status);
-  const [priority, setPriority] = useState({name: task.priority || ""});
+  const [priority, setPriority] = useState({ name: task.priority || "" });
   const [attachments, setAttachments] = useState([]);
   const [startDate, setStartDate] = useState(task ? new Date(task.startDate): "");
   const [endDate, setEndDate] = useState(task ? new Date(task.endDate) : "");
@@ -495,6 +495,7 @@ const TaskViewModal = ({ task, onClose }) => {
         .then(() => {
           if (field === "title") setTitle(value);
           if (field === "description") setDescription(value);
+          if (field === "priority") setPriority(value);
           if (field === "startDate") {
             setStartDate(value);
           }
@@ -672,26 +673,28 @@ const TaskViewModal = ({ task, onClose }) => {
     <div className="modal-overlay">
       <div className="modal">
         <button onClick={onClose} className="modal-close">✕</button>
-        <h2>{t("view_task")}</h2>
-
+        <div className="modal-column" style={{ gap: "0px" }}>
+          {editMode ? (
+            <input
+              type="text"
+              className="modal-input"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              onBlur={() => updateTask("title", title)}
+            />
+          ) : (
+            <>
+              <h2 style={{ margin: "0px"}}>{title}</h2>
+              <p style={{ color: "#888", fontSize: "0.95em", margin: "0px" }}>
+                #{task.ticketNumber}
+              </p>
+            </>
+          )}
+        </div>
         {error && <p className="error-message">{error}</p>}
 
         <div className="modal-form">
           <div className="modal-row">
-            <div className="modal-column">
-              <label>{t("title")}:</label>
-              {editMode ? (
-                <input
-                  type="text"
-                  className="modal-input"
-                  value={title}
-                  onChange={(e) => setTitle(e.target.value)}
-                  onBlur={() => updateTask("title", title)}
-                />
-              ) : (
-                <p>{title}</p>
-              )}
-            </div>
             <div className="modal-column">
               <label>{t("description")}:</label>
               {editMode ? (
@@ -736,8 +739,12 @@ const TaskViewModal = ({ task, onClose }) => {
               {Array.isArray(priorities) && priorities.length > 0 ? (
                 <Select
                   options={priorities.map(p => ({ value: p.name, label: p.name }))}
-                  value={priorities.find(p => p.name === priority.name) || null}
-                  onChange={(option) => updateTask("priority", option.value)}
+                  value={priorities.find(p => p.name === priority.name) ? { value: priority.name, label: priority.name } : null}
+                  placeholder={priority}
+                  onChange={(option) => {
+                    setPriority({ name: option.value });
+                    updateTask("priority", option.value);
+                  }}
                   isDisabled={!editMode}
                 />
               ) : (
@@ -805,14 +812,64 @@ const TaskViewModal = ({ task, onClose }) => {
           </div>            
         </div>
 
+        {/* Kommentare */}
+        <div className="modal-comments">
+          <h3>{t("comments")}</h3>
+          {/* Kommentar hinzufügen */}
+          <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 10 }}>
+          <div className="add-comment-row">
+            <textarea
+              className="modal-input"
+              value={newComment}
+              onChange={(e) => setNewComment(e.target.value)}
+              placeholder={t("add_comment")}
+              rows={2}
+            />
+            <div style={{display: "flex", gap: "10px", justifyContent: "space-between", alignItems: "space-between"}}>
+              <button className="button-violet" onClick={handleAddComment}>
+                {t("add_comment")}
+              </button>
+              <button
+                className="button-small"
+                onClick={() => setCommentSortOrder(order => order === "desc" ? "asc" : "desc")}
+                style={{ minWidth: 120 }}
+                >
+                {commentSortOrder === "desc"
+                  ? t("sort_oldest_first") || "Älteste zuerst"
+                  : t("sort_newest_first") || "Neueste zuerst"}
+              </button>
+            </div>
+          </div>
+          </div>
+          {comments.length === 0 ? (
+            <p>{t("no_comments_found")}</p>
+          ) : (
+            <ul className="comment-list">
+              {comments.map((comment) => (
+                <li key={comment._id} className="comment-item">
+                  <div>
+                    <strong>
+                      {comment.createdByFirstname} {comment.createdByLastname} ({comment.createdByUsername})
+                    </strong>
+                    <span style={{ marginLeft: 8, color: "#888", fontSize: "0.9em" }}>
+                      {new Date(comment.createdAt).toLocaleString()}
+                    </span>
+                  </div>
+                  <div>{comment.commentText}</div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+
         <div className="modal-actions">
-          <button onClick={onClose} className="button-red">{t("close")}</button>
           {editMode && (
             <button onClick={handleDeleteTask} className="button-red">{t("delete_task")}</button>
           )}
           <button onClick={() => setEditMode(!editMode)} className="button-violet">
             {editMode ? t("finish") : t("edit")}
           </button>
+          <button onClick={onClose} className="button-red">{t("close")}</button>
         </div>
       </div>
     </div>

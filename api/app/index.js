@@ -17,7 +17,8 @@ const { Readable } = require('stream');
 const { GridFSBucket } = require('mongodb');
 const { createGzip, createGunzip } = require('zlib');
 const { MongoClient, ObjectId } = require('mongodb'); // ObjectId hinzufügen
-const crypto = require("crypto"); // ⬅️ Use require() instead of import
+const crypto = require('crypto');
+const nodemailer = require('nodemailer');
 
 function bytesToBase64(bytes) {
     return btoa(String.fromCharCode(...bytes));
@@ -44,7 +45,7 @@ const JWT_SECRET = process.env.JWT_SECRET || 'supergeheim';
 const appName = process.env.appName || "openTasks"
 const loginTokenDuration = process.env.LOGIN_TOKEN_DURATION || 99; // Beispiel: 1 Stunde (in Stunden), dies kann dynamisch gesetzt werden
 const BACKUP_DIR = path.join(__dirname, 'data/backups');
-
+const FRONTEND_URL = process.env.FRONTEND_URL || "http://localhost:5173"; // URL des Frontends, kann in der .env Datei gesetzt werden
 const i18next = require('i18next');
 const middleware = require('i18next-http-middleware');
 
@@ -99,8 +100,20 @@ app.use(async (req, res, next) => {
 
 // **Middleware für Token-Prüfung**
 const authMiddleware = (req, res, next) => {
-    if((req.url === "/install" && req.method === "POST") || (req.url === "/register" && req.method === "POST") || (req.url === "/login" && req.method === "POST")|| (req.url === "/check-installed" && req.method === "GET")){
-        next()
+    // Endpunkte, die KEIN Token benötigen:
+    const openEndpoints = [
+        "/install",
+        "/register",
+        "/login",
+        "/check-installed",
+        "/users/accept-invite"
+    ];
+    // Auch POST /users/accept-invite erlauben
+    if (
+        (openEndpoints.includes(req.url) && req.method === "POST") ||
+        (req.url === "/check-installed" && req.method === "GET")
+    ) {
+        return next();
     }
     else if (!fs.existsSync(lockFilePath)) {
         res.redirect("/install")
@@ -659,6 +672,103 @@ app.post('/user/create', async (req, res) => {
     }
 });
 
+app.post('/users/invite', async (req, res) => {
+    const { email, username } = req.body;
+    if (!email || !username) {
+        return res.status(400).json({ status: 'error', message: 'Email und Username erforderlich.' });
+    }
+    const existing = await User.findOne({ email });
+    if (existing) {
+        return res.status(400).json({ status: 'error', message: 'Nutzer existiert bereits.' });
+    }
+    const inviteToken = crypto.randomBytes(32).toString('hex');
+    const inviteExpires = new Date(Date.now() + 1000 * 60 * 60 * 24); // 24h gültig
+
+    const user = new User({
+        username,
+        email,
+        invited: true,
+        inviteToken,
+        inviteExpires,
+        isAdmin: false,
+        password: crypto.randomBytes(64).toString('hex'), // Dummy-Passwort setzen!
+        createdAt: new Date()
+    });
+    await user.save();
+
+    // SMTP Settings aus der Config laden
+    const smtpConfigEntry = await Config.findOne({ configName: 'systemsmtpsettings' });
+    if (!smtpConfigEntry || !smtpConfigEntry.configValue) {
+        return res.status(500).json({ status: 'error', message: 'SMTP-Konfiguration fehlt.' });
+    }
+    const smtpConfig = smtpConfigEntry.configValue;
+
+    // E-Mail-Versand mit gespeicherten SMTP-Settings
+    const transporter = nodemailer.createTransport({
+        host: smtpConfig.host,
+        port: smtpConfig.port,
+        secure: smtpConfig.secure,
+        auth: {
+            user: smtpConfig.user,
+            pass: smtpConfig.pass
+        }
+    });
+    const inviteLink = `${FRONTEND_URL}/invite/${inviteToken}`;
+    await transporter.sendMail({
+        from: `"OpenTasks" <${smtpConfig.user}>`,
+        to: email,
+        subject: 'You are invited to OpenTasks!',
+        html: `
+            <div style="font-family: Arial, sans-serif; background: #f6f8fa; padding: 10px;">
+                <div style="max-width: 480px; margin: auto; background: #fff; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.07); padding: 25px;">
+                    <h2 style="color: #2d7ff9; margin-top: 0;">Welcome to OpenTasks!</h2>
+                    <p style="font-size: 16px; color: #333;">
+                        Hello,<br>
+                        You have been invited to join <b>OpenTasks</b> as <b>${username}</b>.
+                    </p>
+                    <p style="font-size: 16px; color: #333;">
+                        To activate your account and set your password, please click the button below:
+                    </p>
+                    <div style="text-align: center; margin: 32px 0;">
+                        <a href="${inviteLink}" style="background: #2d7ff9; color: #fff; text-decoration: none; padding: 14px 32px; border-radius: 6px; font-size: 18px; font-weight: bold; display: inline-block;">
+                            Set your password
+                        </a>
+                    </div>
+                    <p style="font-size: 14px; color: #888;">
+                        If the button does not work, copy and paste this link into your browser:<br>
+                        <a href="${inviteLink}" style="color: #2d7ff9;">${inviteLink}</a>
+                    </p>
+                    <hr style="border: none; border-top: 1px solid #eee; margin: 32px 0;">
+                    <p style="font-size: 12px; color: #aaa; text-align: center;">
+                        This invitation is valid for 24 hours.<br>
+                        If you did not expect this email, you can ignore it.
+                    </p>
+                </div>
+            </div>
+        `
+    });
+
+    res.json({ status: 'success', message: 'invite_sent' });
+});
+
+app.post('/users/accept-invite', async (req, res) => {
+    const { token, password, firstname, lastname, phoneNumber, language } = req.body;
+    const user = await User.findOne({ inviteToken: token, inviteExpires: { $gt: new Date() } });
+    if (!user) {
+        return res.status(400).json({ status: 'error', message: 'Ungültiger oder abgelaufener Token.' });
+    }
+    user.password = await hashPassword(password);
+    user.invited = false;
+    user.inviteToken = undefined;
+    user.inviteExpires = undefined;
+    if (firstname) user.firstname = firstname;
+    if (lastname) user.lastname = lastname;
+    if (phoneNumber) user.phoneNumber = phoneNumber;
+    if (language) user.language = language;
+    await user.save();
+    res.json({ status: 'success', message: 'Passwort gesetzt. Du kannst dich jetzt anmelden.' });
+});
+
 // Benutzerprofil aktualisieren
 app.put('/ownUser/update', async (req, res) => {
     try {
@@ -1133,6 +1243,8 @@ app.put('/projects/:id', async (req, res) => {
     try {
         const { title, description, deadline, members, isServiceDesk, status, isDone } = req.body;
         const project = await Project.findById(req.params.id);
+        console.log('LOADED PROJECT:', project.toObject());
+        console.log(project)
         if (!project) {
             return res.status(404).json({ status: 'error', message: req.t('project_not_found') });
         }
@@ -1150,10 +1262,10 @@ app.put('/projects/:id', async (req, res) => {
         project.isServiceDesk = isServiceDesk;
         project.status = status;
         project.isDone = isDone;
-
         await project.save();
         res.json({ status: 'success', message: 'Projekt aktualisiert', project });
     } catch (error) {
+        console.log(error)
         res.status(500).json({ status: 'error', message: req.t('error_updating_project'), error: error.message });
     }
 });

@@ -10,6 +10,8 @@ import OwnUser from "./pages/OwnUser";
 import { checkInstallation } from "./functions/checkInstallation";
 import Login from "./pages/Login";
 import config from "./config/config.json";
+import AcceptInvite from "./pages/AcceptInvite";
+import { Navigate } from "react-router-dom";
 
 const apiUrl = import.meta.env.VITE_APP_API_URL || "http://localhost:3001";
 
@@ -95,8 +97,17 @@ function App() {
       }
     };
 
-    if (location.pathname !== "/login" && location.pathname !== "/install") {
+    // Exkludiere /login, /install und /invite
+    if (
+      location.pathname !== "/login" &&
+      location.pathname !== "/install" &&
+      !location.pathname.startsWith("/invite")
+    ) {
       verifyToken();
+    }
+    if (location.pathname.startsWith("/invite")) {
+      setLoading(false);
+      return;
     }
   }, [navigate, location.pathname]);
 
@@ -106,17 +117,13 @@ function App() {
 
   return (
     <Routes>
+      {/* Invite immer erreichbar */}
+      <Route path="/invite/:token" element={<AcceptInvite />} />
+
       {/* Installationsseite OHNE Layout */}
-      {user ? 
-        location.pathname === "/login" && navigate("/")
-        :
-        <Route path="/login" element={<Login />} />
-      }
-      {isInstalled ? 
-        location.pathname === "/install" && navigate("/")
-        :
-        <Route path="/install" element={<Install />} />
-      }
+      {!user && <Route path="/login" element={<Login />} />}
+      {!isInstalled && <Route path="/install" element={<Install />} />}
+
       {/* Alle anderen Seiten MIT MainLayout */}
       <Route path="/" element={<MainLayout />}>
         <Route index element={<Home />} />

@@ -15,7 +15,10 @@ const userSchema = new mongoose.Schema({
     uuid: { type: String },
     language: { type: String, default: 'en' }, // Speichert die vom Benutzer gewählte Sprache
     isAdmin: { type: Boolean, default: false },
-    image: { type: String, required: false } // Neues Feld für das Profilbild im Base64-Format
+    image: { type: String, required: false }, // Neues Feld für das Profilbild im Base64-Format
+    invited: { type: Boolean, default: false },
+    inviteToken: String,
+    inviteExpires: Date,
 });
 
 const User = mongoose.model('User', userSchema);

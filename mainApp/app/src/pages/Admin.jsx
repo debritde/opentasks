@@ -11,6 +11,7 @@ import { useTranslation } from "react-i18next";
 
 import config from "../config/config.json";
 import AdminBackups from "../components/AdminBackups";
+import AdminMailSettings from "../components/AdminMailSettings";
 
 const Admin = () => {
   const location = useLocation();
@@ -33,6 +34,7 @@ const Admin = () => {
           <button onClick={() => setActiveTab("userManagement")}>{t("user_management")}</button>
           <button onClick={() => setActiveTab("groupManagement")}>{t("group_management")}</button>
           <button onClick={() => setActiveTab("backups")}>{t("backups")}</button>
+          <button onClick={() => setActiveTab("systemMailSettings")}>{t("system_mail_settings")}</button>
           <button onClick={() => setActiveTab("systemUpdate")}>{t("system_update")}</button>
         </div>
 
@@ -43,6 +45,7 @@ const Admin = () => {
           {activeTab === "userManagement" && <AdminUserManagement />}
           {activeTab === "groupManagement" && <AdminGroupManagement />}
           {activeTab === "backups" && <AdminBackups />}
+          {activeTab === "systemMailSettings" && <AdminMailSettings />}
           {activeTab === "systemUpdate" && <AdminUpdate />}
         </div>
     </div>

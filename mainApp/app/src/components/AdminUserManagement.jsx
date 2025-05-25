@@ -30,6 +30,9 @@ const AdminUserManagement = () => {
     isAdmin: false,
   });
   const [editUser, setEditUser] = useState(null);
+  const [inviteEmail, setInviteEmail] = useState("");
+  const [inviteUsername, setInviteUsername] = useState("");
+  const [inviteMsg, setInviteMsg] = useState("");
 
   useEffect(() => {
     const fetchUsers = async () => {
@@ -133,6 +136,28 @@ console.log(hashedPassword)
     }
   };
 
+  const isValidEmail = (email) => {
+    // Einfache E-Mail-Validierung (RFC-konform ist komplexer, das reicht für UI)
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+  };
+
+  const handleInvite = async () => {
+    if (!isValidEmail(inviteEmail)) {
+      setInviteMsg(t("invite_user_error_invalid_email") || "Bitte eine gültige E-Mail-Adresse eingeben.");
+      return;
+    }
+    const token = localStorage.getItem("token");
+    if (!token) return;
+
+    const res = await fetch(`${apiUrl}/users/invite`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Authorization": token },
+      body: JSON.stringify({ email: inviteEmail, username: inviteUsername })
+    });
+    const data = await res.json();
+    setInviteMsg(data.message);
+  };
+
   if (loading) return <div>{t("loading_users")}</div>;
 
   return (
@@ -197,6 +222,57 @@ console.log(hashedPassword)
           </label>
           <input type="password" placeholder={t("password")} value={newUser.password} onChange={(e) => setNewUser({ ...newUser, password: e.target.value })} />
           <button onClick={handleAddUser}>{t("add_user")}</button>
+        </div>
+
+        {/* Sichtbarer Divider */}
+        <div className="divider" />
+
+        <h1 style={{ marginTop: "0px"}}>{t("invite_user")}</h1>
+        <div className="user-management-card invite-user-card">
+          <div className="invite-user-fields">
+            <input
+              className="invite-user-input"
+              value={inviteUsername}
+              onChange={e => setInviteUsername(e.target.value)}
+              placeholder={t("username") || "Username"}
+              autoComplete="off"
+            />
+            <input
+              className="invite-user-input"
+              value={inviteEmail}
+              onChange={e => setInviteEmail(e.target.value)}
+              placeholder={t("email") || "E-Mail"}
+              type="email"
+              autoComplete="off"
+            />
+            <button
+              className="button-violet"
+              onClick={handleInvite}
+              disabled={!inviteUsername || !inviteEmail}
+            >
+              {t("invite_user") || "Nutzer einladen"}
+            </button>
+          </div>
+          {inviteMsg && (
+            <div
+              className={
+                `invite-user-msg ${
+                  inviteMsg === "invite_sent" ||
+                  inviteMsg.toLowerCase().includes("invite_sent") ||
+                  inviteMsg.toLowerCase().includes("success")
+                    ? "infoGreen"
+                    : "infoRed"
+                }`
+              }
+            >
+              {inviteMsg === "invite_sent"
+                ? t("invite_user_success")
+                : inviteMsg}
+            </div>
+          )}
+          <div className="invite-user-hint">
+            {t("invite_user_hint")}
+          </div>
         </div>
       </div>
     </div>
