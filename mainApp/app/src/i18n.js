@@ -196,6 +196,8 @@ i18n.use(initReactI18next).init({
         "add_priority": "Add Priority",
         "no_task_priorities": "No Task Priorities found",
         "done_in_percent": "Done in %",
+        "mail_settings": "Mail Settings",
+        "system_mail_settings": "System Mail Settings",
       }
     },
     de: {
@@ -388,6 +390,8 @@ i18n.use(initReactI18next).init({
         "add_priority": "Priorität hinzufügen",
         "no_task_priorities": "Keine Task-Prioritäten gefunden",
         "done_in_percent": "Erledigt in %",
+        "mail_settings": "E-Mail Einstellungen",
+        "system_mail_settings": "System E-Mail Einstellungen",
       }
     }
   },
