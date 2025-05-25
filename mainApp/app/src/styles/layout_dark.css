@@ -1861,6 +1861,10 @@ textarea.modal-input {
   content: '';
 }
 
+.logout-button {
+  border: none;
+}
+
 #nav-bar.collapsed .logout-button {
   width: 40px;
   min-width: 40px;
