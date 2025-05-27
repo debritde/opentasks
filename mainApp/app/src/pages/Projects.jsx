@@ -19,6 +19,7 @@ const Projects = () => {
   const [errorMessage, setErrorMessage] = useState([]);
   const [statusData, setStatusData] = useState([]);
   const [showDoneProjects, setShowDoneProjects] = useState(false);
+  const [accessDenied, setAccessDenied] = useState(false);
 
   const [newProject, setNewProject] = useState({
     title: "",
@@ -50,7 +51,13 @@ const Projects = () => {
           headers: { "Content-Type": "application/json", "Authorization": `${token}` }
         });
         const data = await response.json();
-        if (data.status === "success") setProjects(data.projects);
+        if (response.status === 403) {
+          setAccessDenied(true);
+          setProjects([]);
+        } else if (data.status === "success") {
+          setProjects(data.projects);
+          setAccessDenied(false);
+        }
       } catch (error) {
         console.error(t("error_loading_projects"), error);
       } finally {
@@ -182,6 +189,7 @@ const Projects = () => {
   };
 
   if (loading) return <div>{t("loading_projects")}</div>;
+  if (accessDenied) return <div style={{color: "red"}}>{t("no_access_to_projects") || "Kein Zugriff auf Projekte."}</div>;
 
   return (
     <div>

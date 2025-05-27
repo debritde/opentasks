@@ -42,6 +42,8 @@ const ProjectView = () => {
   const [showTaskViewModal, setShowTaskViewModal] = useState(false);
   const [showTaskCreateModal, setShowTaskCreateModal] = useState(false);
   const [tasks, setTasks] = useState([]);
+  const [accessDenied, setAccessDenied] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [project, setProject] = useState(null);
   const [users, setUsers] = useState([]);
   const token = localStorage.getItem("token");
@@ -90,20 +92,26 @@ const ProjectView = () => {
   
   useEffect(() => {
     const fetchProject = async () => {
+      const token = localStorage.getItem("token");
+      if (!token) return;
       try {
         const response = await fetch(`${apiUrl}/projects/${projectId}`, {
-          method: "GET",
-          headers: {
-            "Content-Type": "application/json",
-            "Authorization": `${token}`
-          }
+          headers: { "Authorization": token }
         });
-        const data = await response.json();
-        setProject(data.project);
-        setEditProject(data.project);
-        setSelectedMembers(data.project.members.map(member => ({ value: member._id, label: `${member.firstname} ${member.lastname} (${member.username})` })));
+        if (response.status === 403) {
+          setAccessDenied(true);
+          setProject(null);
+        } else {
+          const data = await response.json();
+          setProject(data.project);
+          setEditProject(data.project);
+          setSelectedMembers(data.project.members.map(member => ({ value: member._id, label: `${member.firstname} ${member.lastname} (${member.username})` })));
+          setAccessDenied(false);
+        }
       } catch (error) {
-        console.error("Fehler beim Laden des Projekts", error);
+        setAccessDenied(true);
+      } finally {
+        setLoading(false);
       }
     };
     fetchProject();
@@ -441,6 +449,9 @@ const ProjectView = () => {
     setEditingFieldRequired(false);
   };
   
+  if (loading) return <div>{t("loading_project")}</div>;
+  if (accessDenied) return <div style={{color:"red"}}>{t("no_access_to_project") || "Kein Zugriff auf dieses Projekt."}</div>;
+
   return (
     <div className="project-view-container">
     <div className="tabs">

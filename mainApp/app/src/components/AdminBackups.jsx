@@ -82,7 +82,7 @@ const AdminBackups = () => {
   const uploadBackup = async () => {
     if (!selectedFile) return;
     const formData = new FormData();
-    formData.append("backup", selectedFile);
+    formData.append("file", selectedFile);
     
     try {
       const response = await fetch(`${apiUrl}/backup/import`, {

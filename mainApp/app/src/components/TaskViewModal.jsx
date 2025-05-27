@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import Select from "react-select";
 import config from "../config/config.json";
 import { useLocation } from "react-router-dom";
@@ -37,6 +37,7 @@ const TaskViewModal = ({ task, onClose }) => {
   const [currentUserFirstname, setCurrentUserFirstname] = useState("");
   const [currentUserLastname, setCurrentUserLastname] = useState("");
   const [currentUserUsername, setCurrentUserUsername] = useState("");
+  const [currentUserIsAdmin, setCurrentUserIsAdmin] = useState(false);
   const [statuses, setStatuses] = useState([]);
   const [priorities, setPriorities] = useState([]);
   const [comments, setComments] = useState([]);
@@ -66,14 +67,29 @@ const TaskViewModal = ({ task, onClose }) => {
   const [elapsedTime, setElapsedTime] = useState("00:00:00");
   const [expandedEntries, setExpandedEntries] = useState({});
   const [showTimeTrackingCreate, setShowTimeTrackingCreate] = useState(false);
-  
+  const [showTimeTracking, setShowTimeTracking] = useState(false);
+  const [manualDuration, setManualDuration] = useState("00:00:00");
+
+  // Hilfsfunktion zum Umwandeln von hh:mm:ss in Sekunden
+  const parseDuration = (str) => {
+    const [h, m, s] = str.split(":").map(Number);
+    return h * 3600 + m * 60 + s;
+  };
+  // Hilfsfunktion zum Umwandeln von Sekunden in hh:mm:ss
+  const formatDuration = (sec) => {
+    const h = String(Math.floor(sec / 3600)).padStart(2, "0");
+    const m = String(Math.floor((sec % 3600) / 60)).padStart(2, "0");
+    const s = String(sec % 60).padStart(2, "0");
+    return `${h}:${m}:${s}`;
+  };
+
   const toggleEntryExpansion = (entryId) => {
     setExpandedEntries(prev => ({ ...prev, [entryId]: !prev[entryId] }));
   };
 
   useEffect(() => {
     fetchTimeEntries();
-  }, [task, timeEntries]);
+  }, [task]);
 
   useEffect(() => {
     console.log("status")
@@ -85,7 +101,8 @@ const TaskViewModal = ({ task, onClose }) => {
     const storedTracking = JSON.parse(localStorage.getItem("trackingTimes")) || {};
     if (storedTracking[task._id]) {
       setTracking(true);
-      setStartTime(new Date(storedTracking[task._id]));
+      // Korrigiert: Zugriff auf das .start Feld!
+      setStartTime(new Date(storedTracking[task._id].start));
     }
   }, [task]);
 
@@ -96,13 +113,12 @@ const TaskViewModal = ({ task, onClose }) => {
       interval = setInterval(() => {
         const now = endTime ? endTime : new Date();
         const diff = Math.floor((now - startTime) / 1000);
-        const hours = String(Math.floor(diff / 3600)).padStart(2, '0');
-        const minutes = String(Math.floor((diff % 3600) / 60)).padStart(2, '0');
-        const seconds = String(diff % 60).padStart(2, '0');
-        setElapsedTime(`${hours}:${minutes}:${seconds}`);
+        setElapsedTime(formatDuration(diff));
+        if (tracking) setManualDuration(formatDuration(diff));
       }, 1000);
     } else {
       setElapsedTime("00:00:00");
+      if (!tracking) setManualDuration("00:00:00");
     }
     return () => clearInterval(interval);
   }, [tracking, startTime, endTime]);
@@ -118,22 +134,55 @@ const TaskViewModal = ({ task, onClose }) => {
       });
       const data = await response.json();
       if (data.status === "success") {
-        setTimeEntries(data.timeEntries);
+        // Für jeden TimeEntry Userdaten nachladen
+        const entriesWithUser = await Promise.all(
+          data.timeEntries.map(async (entry) => {
+            try {
+              const userRes = await fetch(`${apiUrl}/users/${entry.userId}`, {
+                method: "GET",
+                headers: {
+                  "Content-Type": "application/json",
+                  "Authorization": token,
+                },
+              });
+              if (userRes.ok) {
+                const userData = await userRes.json();
+                entry.createdByFirstname = userData.user.firstname || "";
+                entry.createdByLastname = userData.user.lastname || "";
+                entry.createdByUsername = userData.user.username || "";
+              } else {
+                entry.createdByFirstname = "";
+                entry.createdByLastname = "";
+                entry.createdByUsername = "Unbekannt";
+              }
+            } catch (err) {
+              entry.createdByFirstname = "";
+              entry.createdByLastname = "";
+              entry.createdByUsername = "Fehler";
+            }
+            return entry;
+          })
+        );
+        setTimeEntries(entriesWithUser);
       }
     } catch (error) {
       console.error("Fehler beim Abrufen der Zeiterfassungen:", error);
     }
   };
 
+  // Timer-Start
   const startTracking = () => {
     setTracking(true);
     const now = new Date();
     setStartTime(now);
+    setManualDuration("00:00:00");
+    // Speichere Task-ID, Startzeit und Titel im trackingTimes
     const storedTracking = JSON.parse(localStorage.getItem("trackingTimes")) || {};
-    storedTracking[task._id] = now;
+    storedTracking[task._id] = { start: now, title: task.title };
     localStorage.setItem("trackingTimes", JSON.stringify(storedTracking));
   };
 
+  // Timer-Stopp
   const stopTracking = () => {
     setTracking(false);
     const now = new Date();
@@ -143,8 +192,16 @@ const TaskViewModal = ({ task, onClose }) => {
     localStorage.setItem("trackingTimes", JSON.stringify(storedTracking));
   };
 
+  // Speichern (Timer oder manuell)
   const saveTracking = async () => {
-    if (!startTime || !endTime) return;
+    let start = startTime;
+    let end = endTime;
+    if (!tracking && manualDuration && manualDuration !== "00:00:00") {
+      // Manueller Eintrag: jetzt als Endzeit, Dauer zurückrechnen
+      end = new Date();
+      start = new Date(end - parseDuration(manualDuration) * 1000);
+    }
+    if (!start || !end) return;
     try {
       const response = await fetch(`${apiUrl}/tasks/${task._id}/time-tracking`, {
         method: "POST",
@@ -154,8 +211,8 @@ const TaskViewModal = ({ task, onClose }) => {
         },
         body: JSON.stringify({
           userId: localStorage.getItem("userId"),
-          startTime,
-          endTime,
+          startTime: start,
+          endTime: end,
           description: timeTrackingDescription,
         }),
       });
@@ -165,6 +222,7 @@ const TaskViewModal = ({ task, onClose }) => {
         setStartTime(null);
         setEndTime(null);
         setTimeTrackingDescription("");
+        setManualDuration("00:00:00");
       }
     } catch (error) {
       console.error("Fehler beim Speichern der Zeiterfassung:", error);
@@ -374,6 +432,26 @@ const TaskViewModal = ({ task, onClose }) => {
       .catch((err) => console.error("Fehler beim Hinzufügen des Kommentars:", err));
   };
 
+  const handleDeleteComment = async (commentId) => {
+    if (!window.confirm(t("confirm_delete_comment") || "Kommentar wirklich löschen?")) return;
+    try {
+      const response = await fetch(`${apiUrl}/comments/${commentId}`, {
+        method: "DELETE",
+        headers: {
+          "Authorization": token,
+        },
+      });
+      const data = await response.json();
+      if (data.status === "success") {
+        setComments(comments.filter(c => c._id !== commentId));
+      } else {
+        alert(data.message || "Fehler beim Löschen.");
+      }
+    } catch (err) {
+      alert("Fehler beim Löschen.");
+    }
+  };
+
   useEffect(() => {
     const token = localStorage.getItem("token");
     const fetchCreatedByUser = async () => {
@@ -452,6 +530,7 @@ const TaskViewModal = ({ task, onClose }) => {
         setCurrentUserFirstname(data.user.firstname || "");
         setCurrentUserLastname(data.user.lastname || "");
         setCurrentUserUsername(data.user.username || "");
+        setCurrentUserIsAdmin(data.user.isAdmin || false);
       } catch (err) {
         console.error(err);
         setError("Fehler beim Abrufen der Benutzerinformationen.");
@@ -668,11 +747,201 @@ const TaskViewModal = ({ task, onClose }) => {
   };
 
 
-  
+  const handleAttachmentUpload = async (e) => {
+    e.preventDefault();
+    const fileInput = e.target.elements.attachmentFile;
+    if (!fileInput.files.length) return;
+    const formData = new FormData();
+    formData.append('file', fileInput.files[0]);
+    try {
+      const res = await fetch(`${apiUrl}/tasks/${task._id}/upload`, {
+        method: "POST",
+        headers: {
+          "Authorization": token,
+        },
+        body: formData,
+      });
+      const data = await res.json();
+      if (data.status === "success") {
+        // Fallback falls data.attachment fehlt
+        const newAttachment = data.attachment
+          ? data.attachment
+          : { fileId: data.fileId, filename: fileInput.files[0].name };
+        setAttachments((prev) => [...prev, newAttachment]);
+        fileInput.value = "";
+      } else {
+        alert(data.message || "Fehler beim Hochladen.");
+      }
+    } catch (err) {
+      alert("Fehler beim Hochladen.");
+    }
+  };
+
+  // Funktion für Attachment-Download mit Auth-Header
+  const handleDownloadAttachment = async (att) => {
+    try {
+      const res = await fetch(`${apiUrl}/attachments/${att.fileId}`, {
+        method: "GET",
+        headers: { "Authorization": token }
+      });
+      if (!res.ok) throw new Error("Download fehlgeschlagen");
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = att.filename || "attachment";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      alert("Fehler beim Download.");
+    }
+  };
+
+  // Funktion für Attachment-Vorschau
+  const handlePreviewAttachment = async (att) => {
+    try {
+      const res = await fetch(`${apiUrl}/attachments/${att.fileId}/view`, {
+        method: "GET",
+        headers: { "Authorization": token }
+      });
+      if (!res.ok) throw new Error("Vorschau fehlgeschlagen");
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      window.open(url, "_blank", "noopener,noreferrer");
+      // Optional: Nach kurzer Zeit wieder freigeben
+      setTimeout(() => window.URL.revokeObjectURL(url), 10000);
+    } catch (err) {
+      alert("Fehler bei der Vorschau.");
+    }
+  };
+
+  // Funktion für Attachment-Löschen
+  const handleDeleteAttachment = async (att) => {
+    if (!window.confirm(t("confirm_delete_attachment") || "Anhang wirklich löschen?")) return;
+    try {
+      const res = await fetch(`${apiUrl}/tasks/${task._id}/attachments/${att.fileId}`, {
+        method: "DELETE",
+        headers: { "Authorization": token },
+      });
+      const data = await res.json();
+      if (data.status === "success") {
+        setAttachments((prev) => prev.filter(a => a.fileId !== att.fileId));
+      } else {
+        alert(data.message || "Fehler beim Löschen.");
+      }
+    } catch (err) {
+      alert("Fehler beim Löschen.");
+    }
+  };
+
+  const [commentTab, setCommentTab] = useState("all"); // "all" | "comments" | "timetracking"
+
+  // Hilfsfunktion: gemischte Liste für "Alle"
+  const mergedEntries = useMemo(() => {
+    const all = [
+      ...comments.map(c => ({ ...c, _type: "comment", createdAt: c.createdAt })),
+      ...timeEntries.map(t => ({ ...t, _type: "timetracking", createdAt: t.startTime || t.createdAt })),
+    ];
+    return all.sort((a, b) =>
+      commentSortOrder === "desc"
+        ? new Date(b.createdAt) - new Date(a.createdAt)
+        : new Date(a.createdAt) - new Date(b.createdAt)
+    );
+  }, [comments, timeEntries, commentSortOrder]);
+
+  const renderEntry = (entry) => {
+    if (entry._type === "comment") {
+      return (
+        <li key={"c_" + entry._id} className="comment-item comment-entry">
+          <div className="entry-header">
+        <div className="entry-label-wrapper">
+          <span className={`entry-label ${entry._type === "comment" ? "comment-label" : "timetracking-label"}`}>
+            {entry._type === "comment" ? <>💬 {t("comment")}</> : <>⏱️ {t("time_tracking") || "Zeiterfassung"}</>}
+          </span>
+        </div>
+        <div className="entry-header-content">
+          <div className="entry-title">{entry.commentText}</div>
+          <div className="entry-user">{entry.createdByFirstname} {entry.createdByLastname} <span className="entry-username">({entry.createdByUsername})</span></div>
+          <div className="entry-date">{new Date(entry.createdAt).toLocaleString()}</div>
+        </div>
+        {(currentUserIsAdmin || entry.createdByUserId === currentUserUserId) && (
+          <button
+            className="button-small button-red"
+            onClick={() => handleDeleteComment(entry._id)}
+            title={t("delete_comment")}
+          >
+            <TrashIcon />
+          </button>
+        )}
+          </div>
+        </li>
+      );
+    }
+    if (entry._type === "timetracking") {
+      return (
+        <li key={"t_" + entry._id} className="comment-item timetracking-entry">
+          <div className="entry-header">
+        <div className="entry-label-wrapper">
+          <span className={`entry-label ${entry._type === "comment" ? "comment-label" : "timetracking-label"}`}>
+            {entry._type === "comment"
+          ? <>💬 {t("comment")}</>
+          : <>⏱️ {t("time_tracking") || "Zeiterfassung"}</>}
+          </span>
+        </div>
+        <div className="entry-header-content">
+          <div className="entry-title">
+            {entry.startTime && entry.endTime
+          ? (() => {
+              const diff = Math.floor((new Date(entry.endTime) - new Date(entry.startTime)) / 1000);
+              const h = String(Math.floor(diff / 3600)).padStart(2, "0");
+              const m = String(Math.floor((diff % 3600) / 60)).padStart(2, "0");
+              const s = String(diff % 60).padStart(2, "0");
+              return `${h}:${m}:${s}`;
+            })()
+          : ""}
+            {entry.description && <> – {entry.description}</>}
+          </div>
+          <div className="entry-user">
+            {entry.createdByFirstname} {entry.createdByLastname} <span className="entry-username">({entry.createdByUsername})</span>
+          </div>
+          <div className="entry-date">
+            {entry.startTime ? new Date(entry.startTime).toLocaleString() : ""}
+            {entry.endTime ? " – " + new Date(entry.endTime).toLocaleString() : ""}
+          </div>
+        </div>
+        {(currentUserIsAdmin || entry.userId === currentUserUserId) && (
+          <button
+            className="button-small button-red"
+            onClick={() => deleteTimeEntry(entry._id)}
+            title={t("delete_time_entry")}
+          >
+            <TrashIcon />
+          </button>
+        )}
+          </div>
+        </li>
+      );
+    }
+    return null;
+  };
+
   return (
     <div className="modal-overlay">
       <div className="modal">
-        <button onClick={onClose} className="modal-close">✕</button>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <button onClick={onClose} className="modal-close">✕</button>
+          {editMode && (
+            <button
+              onClick={handleDeleteTask}
+              className="button-red"
+              style={{ marginLeft: 8 }}
+            >
+              {t("delete_task")}
+            </button>
+          )}
+        </div>
         <div className="modal-column" style={{ gap: "0px" }}>
           {editMode ? (
             <input
@@ -694,6 +963,62 @@ const TaskViewModal = ({ task, onClose }) => {
         {error && <p className="error-message">{error}</p>}
 
         <div className="modal-form">
+          <div className="modal-row">
+            <div className="modal-column">
+              <div style={{ marginBottom: 10 }}>
+                <button
+                  className="button-violet"
+                  onClick={() => setShowTimeTracking((v) => !v)}
+                  style={{ marginBottom: 4 }}
+                >
+                  {showTimeTracking ? t("hide_time_tracking") || "Zeiterfassung ausblenden" : t("show_time_tracking") || "Zeiterfassung anzeigen"}
+                </button>
+                <Collapse isOpened={showTimeTracking}>
+                  <div className="modal-timetracking" style={{ marginBottom: 16 }}>
+                    <h3>{t("time_tracking") || "Zeiterfassung"}</h3>
+                    <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 8 }}>
+                      <input
+                        type="text"
+                        className="modal-input"
+                        style={{ width: 110, fontFamily: "monospace" }}
+                        value={manualDuration}
+                        onChange={e => setManualDuration(e.target.value.replace(/[^0-9:]/g, ""))}
+                        disabled={tracking}
+                        placeholder="hh:mm:ss"
+                      />
+                      <input
+                        type="text"
+                        className="modal-input"
+                        style={{ width: 220 }}
+                        value={timeTrackingDescription}
+                        onChange={e => setTimeTrackingDescription(e.target.value)}
+                        placeholder={t("timetracking_description") || "Beschreibung (optional)"}
+                      />
+                      {!tracking ? (
+                        <button className="button-violet" onClick={startTracking}>
+                          {t("start_timer") || "Timer starten"}
+                        </button>
+                      ) : (
+                        <>
+                          <button className="button-red" onClick={stopTracking}>
+                            {t("stop_timer") || "Timer stoppen"}
+                          </button>
+                        </>
+                      )}
+                      <button
+                        className="button-violet"
+                        onClick={saveTracking}
+                        disabled={tracking ? false : manualDuration === "00:00:00"}
+                        style={{ marginLeft: 8 }}
+                      >
+                        {t("save_time_entry") || "Zeiteintrag speichern"}
+                      </button>
+                    </div>
+                  </div>
+                </Collapse>
+              </div>
+            </div>
+          </div>
           <div className="modal-row">
             <div className="modal-column">
               <label>{t("description")}:</label>
@@ -815,47 +1140,141 @@ const TaskViewModal = ({ task, onClose }) => {
         {/* Kommentare */}
         <div className="modal-comments">
           <h3>{t("comments")}</h3>
-          {/* Kommentar hinzufügen */}
+          {/* Tabs */}
+          <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
+            <button
+              className={commentTab === "all" ? "button-violet" : "button-small"}
+              onClick={() => setCommentTab("all")}
+            >
+              {t("all")}
+            </button>
+            <button
+              className={commentTab === "comments" ? "button-violet" : "button-small"}
+              onClick={() => setCommentTab("comments")}
+            >
+              {t("comments")}
+            </button>
+            <button
+              className={commentTab === "timetracking" ? "button-violet" : "button-small"}
+              onClick={() => setCommentTab("timetracking")}
+            >
+              {t("time_tracking")}
+            </button>
+          </div>
+          {/* Kommentar hinzufügen bleibt wie gehabt */}
           <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 10 }}>
-          <div className="add-comment-row">
-            <textarea
-              className="modal-input"
-              value={newComment}
-              onChange={(e) => setNewComment(e.target.value)}
-              placeholder={t("add_comment")}
-              rows={2}
-            />
-            <div style={{display: "flex", gap: "10px", justifyContent: "space-between", alignItems: "space-between"}}>
-              <button className="button-violet" onClick={handleAddComment}>
-                {t("add_comment")}
-              </button>
-              <button
-                className="button-small"
-                onClick={() => setCommentSortOrder(order => order === "desc" ? "asc" : "desc")}
-                style={{ minWidth: 120 }}
-                >
-                {commentSortOrder === "desc"
-                  ? t("sort_oldest_first") || "Älteste zuerst"
-                  : t("sort_newest_first") || "Neueste zuerst"}
-              </button>
+            <div className="add-comment-row">
+              <textarea
+                className="modal-input"
+                value={newComment}
+                onChange={(e) => setNewComment(e.target.value)}
+                placeholder={t("add_comment")}
+                rows={2}
+              />
+              <div style={{display: "flex", gap: "10px", justifyContent: "space-between", alignItems: "space-between"}}>
+                <button className="button-violet" onClick={handleAddComment}>
+                  {t("add_comment")}
+                </button>
+                <button
+                  className="button-small"
+                  onClick={() => setCommentSortOrder(order => order === "desc" ? "asc" : "desc")}
+                  style={{ minWidth: 120 }}
+                  >
+                  {commentSortOrder === "desc"
+                    ? t("sort_oldest_first") || "Älteste zuerst"
+                    : t("sort_newest_first") || "Neueste zuerst"}
+                </button>
+              </div>
             </div>
           </div>
-          </div>
-          {comments.length === 0 ? (
-            <p>{t("no_comments_found")}</p>
-          ) : (
+          {/* Einträge je nach Tab */}
+          {commentTab === "all" && (
             <ul className="comment-list">
-              {comments.map((comment) => (
-                <li key={comment._id} className="comment-item">
-                  <div>
-                    <strong>
-                      {comment.createdByFirstname} {comment.createdByLastname} ({comment.createdByUsername})
-                    </strong>
-                    <span style={{ marginLeft: 8, color: "#888", fontSize: "0.9em" }}>
-                      {new Date(comment.createdAt).toLocaleString()}
-                    </span>
+              {mergedEntries.length === 0 ? (
+                <li className="comment-item">{t("no_comments_found")}</li>
+              ) : (
+                mergedEntries.map(renderEntry)
+              )}
+            </ul>
+          )}
+          {commentTab === "comments" && (
+            <ul className="comment-list">
+              {comments.length === 0 ? (
+                <li className="comment-item">{t("no_comments_found")}</li>
+              ) : (
+                comments.map(c => renderEntry({ ...c, _type: "comment" }))
+              )}
+            </ul>
+          )}
+          {commentTab === "timetracking" && (
+            <ul className="comment-list">
+              {timeEntries.length === 0 ? (
+                <li className="comment-item">{t("no_time_entries_found") || "Keine Zeiterfassungen gefunden."}</li>
+              ) : (
+                [...timeEntries]
+                  .sort((a, b) =>
+                    commentSortOrder === "desc"
+                      ? new Date(b.startTime || b.createdAt) - new Date(a.startTime || a.createdAt)
+                      : new Date(a.startTime || a.createdAt) - new Date(b.startTime || b.createdAt)
+                  )
+                  .map(t => renderEntry({ ...t, _type: "timetracking" }))
+              )}
+            </ul>
+          )}
+        </div>
+
+        {/* Anhänge */}
+        <div className="modal-attachments">
+          <h3>{t("attachments")}</h3>
+          {editMode && (
+            <form onSubmit={handleAttachmentUpload} className="attachment-upload-form">
+              <input type="file" name="attachmentFile" />
+              <button type="submit" className="button-small button-violet" style={{ marginLeft: 8 }}>
+                {t("upload") || "Hochladen"}
+              </button>
+            </form>
+          )}
+          {attachments.length === 0 ? (
+            <p>{t("no_attachments_found")}</p>
+          ) : (
+            <ul className="attachment-list">
+              {attachments.map((att) => (
+                <li key={att.fileId} className="attachment-item">
+                  <div className="attachment-info">
+                    <span className="attachment-icon">📎</span>
+                    <span className="attachment-filename">{att.filename}</span>
                   </div>
-                  <div>{comment.commentText}</div>
+                  <div className="attachment-actions">
+                    <button
+                      className="button-small button-violet"
+                      title={t("preview")}
+                      onClick={e => {
+                        e.preventDefault();
+                        handlePreviewAttachment(att);
+                      }}
+                    >
+                      {t("preview") || "Ansehen"}
+                    </button>
+                    <button
+                      className="button-small"
+                      title={t("download")}
+                      onClick={e => {
+                        e.preventDefault();
+                        handleDownloadAttachment(att);
+                      }}
+                    >
+                      ⬇️
+                    </button>
+                    {editMode && (
+                      <button
+                        className="button-small button-red"
+                        title={t("delete")}
+                        onClick={() => handleDeleteAttachment(att)}
+                      >
+                        <TrashIcon />
+                      </button>
+                    )}
+                  </div>
                 </li>
               ))}
             </ul>
@@ -863,9 +1282,6 @@ const TaskViewModal = ({ task, onClose }) => {
         </div>
 
         <div className="modal-actions">
-          {editMode && (
-            <button onClick={handleDeleteTask} className="button-red">{t("delete_task")}</button>
-          )}
           <button onClick={() => setEditMode(!editMode)} className="button-violet">
             {editMode ? t("finish") : t("edit")}
           </button>
@@ -875,5 +1291,20 @@ const TaskViewModal = ({ task, onClose }) => {
     </div>
   );
 };
+
+const TrashIcon = ({ size = 16 }) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 20 20"
+    fill="none"
+    style={{ display: "inline", verticalAlign: "middle" }}
+    xmlns="http://www.w3.org/2000/svg"
+  >
+    <rect x="5" y="7" width="10" height="8" rx="2" />
+    <rect x="8" y="3" width="4" height="2" rx="1" />
+    <rect x="3" y="5" width="14" height="2" rx="1" />
+  </svg>
+);
 
 export default TaskViewModal;

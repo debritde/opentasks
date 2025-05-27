@@ -41,6 +41,7 @@ const PORT = 3001
 const configDir = path.join(__dirname, 'data/config');
 const configPath = path.join(__dirname, 'data/config/config.json');
 const lockFilePath = path.join(__dirname, 'data/config/installed.lock');
+const ATTACHMENTS_DIR = path.join(__dirname, 'data/attachments');
 const JWT_SECRET = process.env.JWT_SECRET || 'supergeheim';
 const appName = process.env.appName || "openTasks"
 const loginTokenDuration = process.env.LOGIN_TOKEN_DURATION || 99; // Beispiel: 1 Stunde (in Stunden), dies kann dynamisch gesetzt werden
@@ -202,11 +203,6 @@ const actionLogger = async (req, res, next) => {
 };
 
 
-// Prüfen, ob die Installation abgeschlossen ist
-// Wenn Ja dann mongoDB verbinden
-let gfsBucket;
-let upload;
-
 try {
     if (fs.existsSync(lockFilePath)) {
         try {
@@ -228,10 +224,8 @@ try {
                     gfsBucket = new GridFSBucket(conn.db, { bucketName: 'uploads' });
                     logMessage("info", '📂 GridFSBucket initialisiert!');
 
-                    // Multer-Speicher (Dateien erst in RAM speichern, dann in GridFS schreiben)
-                    const storage = multer.memoryStorage();
-                    upload = multer({ storage });
-                    
+
+
                     logMessage("info", '🚀 Multer-Upload bereit!');
                     
                     // Action Logger nur initialisieren wenn eine DB Connection besteht
@@ -254,31 +248,25 @@ try {
     logMessage("error", req.t('error_reading_config') + error);
 }
 
-// GridFS initialisieren
-if (fs.existsSync(lockFilePath)) {
-    const conn = mongoose.connection;
-    let gfs;
-    
-    conn.once('open', () => {
-        gfs = Grid(conn.db, mongoose.mongo);
-        gfs.collection('uploads'); // Benenne die Collection für Dateien
-    });
+// Ordner anlegen, falls nicht vorhanden
+if (!fs.existsSync(ATTACHMENTS_DIR)) fs.mkdirSync(ATTACHMENTS_DIR, { recursive: true });
+if (!fs.existsSync(BACKUP_DIR)) fs.mkdirSync(BACKUP_DIR, { recursive: true });
 
-    const config = JSON.parse(fs.readFileSync(configPath, 'utf8'))
-    const mongoUri = `mongodb://${config.database.user}:${config.database.password}@${config.database.host}:27017/${config.database.name}`
-    // GridFS-Speicher für Multer einrichten
-    const storage = new GridFsStorage({
-        url: mongoUri,
-        file: (req, file) => {
-            return {
-                filename: file.originalname,
-                bucketName: 'uploads' // Muss mit `gfs.collection('uploads')` übereinstimmen
-            };
+// Multer DiskStorage für alle Uploads (Attachments & Backups)
+const storage = multer.diskStorage({
+    destination: function (req, file, cb) {
+        // Backup-Import: speichere in BACKUP_DIR, sonst in ATTACHMENTS_DIR
+        if (req.originalUrl.startsWith('/backup/import')) {
+            cb(null, BACKUP_DIR);
+        } else {
+            cb(null, ATTACHMENTS_DIR);
         }
-    });
-
-    const upload = multer({ storage });
-}
+    },
+    filename: function (req, file, cb) {
+        cb(null, Date.now() + '-' + file.originalname);
+    }
+});
+const upload = multer({ storage });
 
 if (!fs.existsSync(BACKUP_DIR)) {
     fs.mkdirSync(BACKUP_DIR, { recursive: true });
@@ -1155,8 +1143,6 @@ app.post('/groups/:id/remove-user', async (req, res) => {
     }
 });
 
-
-
 // **Projekt erstellen**
 app.post('/projects', async (req, res) => {
     try {
@@ -1241,29 +1227,39 @@ app.get('/projects/own', async (req, res) => {
 // **Projekt bearbeiten**
 app.put('/projects/:id', async (req, res) => {
     try {
-        const { title, description, deadline, members, isServiceDesk, status, isDone } = req.body;
-        const project = await Project.findById(req.params.id);
-        console.log('LOADED PROJECT:', project.toObject());
-        console.log(project)
-        if (!project) {
-            return res.status(404).json({ status: 'error', message: req.t('project_not_found') });
+        const token = req.headers.authorization || req.headers.Authorization;
+        const tokenRecord = await LoginToken.findOne({ token });
+        if (!tokenRecord) {
+            return res.status(401).json({ status: 'error', message: req.t('invalid_token') });
+        }
+        const user = await User.findById(tokenRecord.userId);
+
+        const task = await Task.findById(req.params.id);
+        if (!task) {
+            return res.status(404).json({ status: 'error', message: req.t('task_not_found') });
         }
 
-        if (title) project.title = title;
-        if (description) project.description = description;
-        if (deadline) project.deadline = deadline;
+        // Zugriffsprüfung
+        if (!(await hasProjectAccess(user, task.project))) {
+            return res.status(403).json({ status: 'error', message: req.t('not_allowed') });
+        }
+
+        const { title, description, deadline, members, isServiceDesk, status, isDone } = req.body;
+        if (title) task.title = title;
+        if (description) task.description = description;
+        if (deadline) task.deadline = deadline;
         if (members) {
             const users = await User.find({ _id: { $in: members } });
             if (users.length !== members.length) {
                 return res.status(400).json({ status: 'error', message: req.t('one_or_more_users_not_exist') });
             }
-            project.members = members;
+            task.members = members;
         }
-        project.isServiceDesk = isServiceDesk;
-        project.status = status;
-        project.isDone = isDone;
-        await project.save();
-        res.json({ status: 'success', message: 'Projekt aktualisiert', project });
+        task.isServiceDesk = isServiceDesk;
+        task.status = status;
+        task.isDone = isDone;
+        await task.save();
+        res.json({ status: 'success', message: 'Projekt aktualisiert', task });
     } catch (error) {
         console.log(error)
         res.status(500).json({ status: 'error', message: req.t('error_updating_project'), error: error.message });
@@ -1305,55 +1301,36 @@ app.get('/tasks', async (req, res) => {
 
 // **Task erstellen**
 app.post('/tasks', async (req, res) => {
-    
     try {
-        const { title, description, project, assignedUsers, status, priority, isSubTask, subtaskIds, parentTaskTicketNumber, startDate, endDate, isDone, parentTaskId, kanbanIndexVertical, createdByUserId, createdByEmailAddress, customFields } = req.body;
-        // Prüfen, ob das zugewiesene Projekt existiert
-        
+        const { title, description, project, assignedUsers, ...rest } = req.body;
+        const token = req.headers.authorization || req.headers.Authorization;
+        const tokenRecord = await LoginToken.findOne({ token });
+        if (!tokenRecord) {
+            return res.status(401).json({ status: 'error', message: req.t('invalid_token') });
+        }
+        const userId = tokenRecord.userId.toString();
+        const user = await User.findById(userId);
+
         const existingProject = await Project.findById(project);
         if (!existingProject) {
             return res.status(400).json({ status: 'error', message: req.t('project_not_found') });
         }
-        
+
+        // Prüfen, ob User Admin, Ersteller oder Mitglied ist
+        const isMember = existingProject.members.map(m => m.toString()).includes(userId);
+        const isCreator = existingProject.creatorId && existingProject.creatorId.toString() === userId;
+        if (!user.isAdmin && !isMember && !isCreator) {
+            return res.status(403).json({ status: 'error', message: req.t('not_allowed') });
+        }
+
         // Prüfen, ob alle zugewiesenen Benutzer existieren
         const users = await User.find({ _id: { $in: assignedUsers } });
         if (users.length !== assignedUsers.length) {
             return res.status(400).json({ status: 'error', message: req.t('one_or_more_users_not_exist') });
         }
-        const task = await new Task({ 
-            title, 
-            description, 
-            project, 
-            assignedUsers, 
-            status, 
-            priority, 
-            isSubTask,
-            subtaskIds,
-            parentTaskTicketNumber,
-            startDate,
-            endDate,
-            isDone,
-            createdByUserId,
-            createdByEmailAddress,
-            kanbanIndexVertical,
-            customFields
-        });
-        // Falls der Task ein Subtask ist, dem Haupttask hinzufügen
-        if (isSubTask && parentTaskId) {
-            const parentTask = await Task.findById(parentTaskId);
-            if (!parentTask) {
-                return res.status(400).json({ status: 'error', message: req.t('main_task_not_found') });
-            }
-            task.isSubTask = true;
-            await task.save();
-            
-            // Haupttask aktualisieren und Subtask-ID hinzufügen
-            parentTask.subtaskIds.push(task._id);
-            await parentTask.save();
-        } else {
-            await task.save();
-        }
-        
+
+        const task = new Task({ title, description, project, assignedUsers, ...rest });
+        await task.save();
         res.json({ status: 'success', message: 'Task erstellt', task });
     } catch (error) {
         res.status(500).json({ status: 'error', message: req.t('error_creating_task'), error: error.message });
@@ -1363,13 +1340,24 @@ app.post('/tasks', async (req, res) => {
 // **Task bearbeiten**
 app.put('/tasks/:id', async (req, res) => {
     try {
-        const { title, description, assignedUsers, status, startDate, endDate, priority, isDone, kanbanIndexVertical, customFields } = req.body;
+        const token = req.headers.authorization || req.headers.Authorization;
+        const tokenRecord = await LoginToken.findOne({ token });
+        if (!tokenRecord) {
+            return res.status(401).json({ status: 'error', message: req.t('invalid_token') });
+        }
+        const user = await User.findById(tokenRecord.userId);
+
         const task = await Task.findById(req.params.id);
-        
         if (!task) {
             return res.status(404).json({ status: 'error', message: req.t('task_not_found') });
         }
 
+        // Zugriffsprüfung
+        if (!(await hasProjectAccess(user, task.project))) {
+            return res.status(403).json({ status: 'error', message: req.t('not_allowed') });
+        }
+
+        const { title, description, assignedUsers, status, startDate, endDate, priority, isDone, kanbanIndexVertical, customFields } = req.body;
         if (title) task.title = title;
         if (description) task.description = description;
         if (status) task.status = status;
@@ -1400,9 +1388,20 @@ app.put('/tasks/:id', async (req, res) => {
 // **Task löschen (inkl. Subtasks)**
 app.delete('/tasks/:id', async (req, res) => {
     try {
+        const token = req.headers.authorization || req.headers.Authorization;
+        const tokenRecord = await LoginToken.findOne({ token });
+        if (!tokenRecord) {
+            return res.status(401).json({ status: 'error', message: req.t('invalid_token') });
+        }
+        const user = await User.findById(tokenRecord.userId);
+
         const task = await Task.findById(req.params.id);
         if (!task) {
             return res.status(404).json({ status: 'error', message: req.t('task_not_found') });
+        }
+
+        if (!(await hasProjectAccess(user, task.project))) {
+            return res.status(403).json({ status: 'error', message: req.t('not_allowed') });
         }
 
         if (!task.isSubTask) {
@@ -1421,19 +1420,67 @@ app.delete('/tasks/:id', async (req, res) => {
 // **Details eines Projekts abrufen**
 app.get("/projects/:projectId", async (req, res) => {
     try {
+      const token = req.headers.authorization || req.headers.Authorization;
+      if (!token) {
+        return res.status(401).json({ status: "error", message: "Kein Token übergeben." });
+      }
+      const tokenRecord = await LoginToken.findOne({ token });
+      if (!tokenRecord) {
+        return res.status(401).json({ status: "error", message: req.t('invalid_token') });
+      }
+      const userId = tokenRecord.userId.toString();
+
+      // Hole User für Admin-Check
+      const user = await User.findById(userId);
+
+      // Projekt inkl. Mitglieder und Ersteller laden
       const project = await Project.findById(req.params.projectId).populate("members");
       if (!project) {
         return res.status(404).json({ status: "error", message: "Projekt nicht gefunden." });
       }
+
+      // Admin sieht alles
+      if (user && user.isAdmin) {
+        return res.json({ status: "success", project });
+      }
+
+      // Ersteller sieht immer alles
+      if (project.creatorId && project.creatorId.toString() === userId) {
+        return res.json({ status: "success", project });
+      }
+
+      // Prüfen, ob der User Mitglied ist
+      const isMember = project.members.some(member => member._id.toString() === userId);
+      if (!isMember) {
+        return res.status(403).json({ status: "error", message: "Kein Zugriff auf dieses Projekt." });
+      }
+
       res.json({ status: "success", project });
     } catch (error) {
       res.status(500).json({ status: "error", message: "Fehler beim Abrufen des Projekts." });
     }
   });
 
-// **Alle Tasks eines Projekts abrufen**
 app.get('/projects/:projectId/tasks', async (req, res) => {
     try {
+        const token = req.headers.authorization || req.headers.Authorization;
+        const tokenRecord = await LoginToken.findOne({ token });
+        if (!tokenRecord) {
+            return res.status(401).json({ status: 'error', message: req.t('invalid_token') });
+        }
+        const user = await User.findById(tokenRecord.userId);
+
+        // Projekt laden
+        const project = await Project.findById(req.params.projectId);
+        if (!project) {
+            return res.status(404).json({ status: 'error', message: req.t('project_not_found') });
+        }
+
+        // Zugriff prüfen
+        if (!(await hasProjectAccess(user, project._id))) {
+            return res.status(403).json({ status: 'error', message: req.t('not_allowed') });
+        }
+
         const tasks = await Task.find({ project: req.params.projectId })
             .populate('assignedUsers', 'firstname lastname username')
             .populate('subtaskIds', 'title status priority');
@@ -1496,13 +1543,23 @@ app.delete('/tasks/:id/remove-user', async (req, res) => {
 // **Task-Status aktualisieren**
 app.patch('/tasks/:id/status', async (req, res) => {
     try {
-        const { status } = req.body;
-        const task = await Task.findById(req.params.id);
+        const token = req.headers.authorization || req.headers.Authorization;
+        const tokenRecord = await LoginToken.findOne({ token });
+        if (!tokenRecord) {
+            return res.status(401).json({ status: 'error', message: req.t('invalid_token') });
+        }
+        const user = await User.findById(tokenRecord.userId);
 
+        const task = await Task.findById(req.params.id);
         if (!task) {
-            return res.status(404).json({ status: 'error', message: req.t('task_ot_found') });
+            return res.status(404).json({ status: 'error', message: req.t('task_not_found') });
         }
 
+        if (!(await hasProjectAccess(user, task.project))) {
+            return res.status(403).json({ status: 'error', message: req.t('not_allowed') });
+        }
+
+        const { status } = req.body;
         task.status = status;
         task.updatedAt = new Date();
         await task.save();
@@ -1624,62 +1681,51 @@ app.delete('/mail2ticket/:id', async (req, res) => {
     }
 });
 
-// Füge eine Überprüfung hinzu, bevor die Route definiert wird
-setTimeout(() => {
-    if (!upload) {
-        logMessage("error", 'upload_not_initialized_mongodb_not_connected');
-    } else {
-        // Erst hier die Upload-Route definieren, wenn `upload` sicher existiert
-        app.post('/tasks/:id/upload', upload.single('file'), async (req, res) => {
-            try {
-                if (!req.file) {
-                    return res.status(400).json({ status: 'error', message: req.t('no_file_uploaded') });
-                }
-        
-                const task = await Task.findById(req.params.id);
-                if (!task) {
-                    return res.status(404).json({ status: 'error', message: req.t('task_not_found') });
-                }
-        
-                // Datei in GridFS speichern
-                const uploadStream = gfsBucket.openUploadStream(req.file.originalname);
-                const readableStream = new Readable();
-                readableStream.push(req.file.buffer);
-                readableStream.push(null);
-                readableStream.pipe(uploadStream);
-        
-                uploadStream.on('error', (err) => {
-                    logMessage("error", 'error_writing_gridfs' + err);
-                    return res.status(500).json({ status: 'error', message: req.t('error_uploading_file') });
-                });
-        
-                uploadStream.on('finish', async () => {
-                    logMessage("info", 'successfully_write_gridfs', uploadStream.id);
-        
-                    task.attachments.push({
-                        filename: req.file.originalname,
-                        fileId: uploadStream.id
-                    });
-                    await task.save();
-        
-                    res.json({ status: 'success', message: req.t('file_upload_success'), fileId: uploadStream.id });
-                });
-        
-            } catch (error) {
-                logMessage("error", req.t('error_uploading_file') + error);
-                res.status(500).json({ status: 'error', message: req.t('error_uploading_file'), error: error.message });
-            }
+// Datei-Upload für Task-Attachments
+app.post('/tasks/:id/upload', upload.single('file'), async (req, res) => {
+    try {
+        if (!req.file) {
+            return res.status(400).json({ status: 'error', message: req.t('no_file_uploaded') });
+        }
+        const task = await Task.findById(req.params.id);
+        if (!task) {
+            return res.status(404).json({ status: 'error', message: req.t('task_not_found') });
+        }
+        const attachment = {
+            filename: req.file.originalname,
+            fileId: req.file.filename,
+            path: req.file.path
+        };
+        task.attachments.push(attachment);
+        await task.save();
+        res.json({
+            status: 'success',
+            message: req.t('file_upload_success'),
+            attachment
         });
-        
+    } catch (error) {
+        res.status(500).json({ status: 'error', message: req.t('error_uploading_file'), error: error.message });
     }
-}, 5000); // Warte 5 Sekunden, um sicherzustellen, dass `upload` gesetzt wurde
+});
 
 // Ruft alle Dateianhänge eines Tasks ab.
 app.get('/tasks/:id/attachments', async (req, res) => {
     try {
+        const token = req.headers.authorization || req.headers.Authorization;
+        const tokenRecord = await LoginToken.findOne({ token });
+        if (!tokenRecord) {
+            return res.status(401).json({ status: 'error', message: req.t('invalid_token') });
+        }
+        const user = await User.findById(tokenRecord.userId);
+
         const task = await Task.findById(req.params.id);
         if (!task) {
             return res.status(404).json({ status: 'error', message: req.t('task_not_found') });
+        }
+
+        // Zugriff prüfen
+        if (!(await hasProjectAccess(user, task.project))) {
+            return res.status(403).json({ status: 'error', message: req.t('not_allowed') });
         }
 
         res.json({ status: 'success', attachments: task.attachments });
@@ -1690,68 +1736,82 @@ app.get('/tasks/:id/attachments', async (req, res) => {
     }
 });
 
-//Lädt eine Datei aus GridFS herunter.
+app.delete('/tasks/:taskId/attachments/:fileId', async (req, res) => {
+  try {
+    const token = req.headers.authorization || req.headers.Authorization;
+    const tokenRecord = await LoginToken.findOne({ token });
+    if (!tokenRecord) return res.status(401).json({ status: 'error', message: 'invalid_token' });
+    const user = await User.findById(tokenRecord.userId);
+
+    const task = await Task.findById(req.params.taskId);
+    if (!task) return res.status(404).json({ status: 'error', message: 'task_not_found' });
+
+    if (!(await hasProjectAccess(user, task.project))) {
+      return res.status(403).json({ status: 'error', message: 'not_allowed' });
+    }
+
+    const att = task.attachments.find(a => a.fileId === req.params.fileId);
+    if (att && att.path && fs.existsSync(att.path)) {
+      fs.unlinkSync(att.path);
+    }
+
+    task.attachments = task.attachments.filter(att => att.fileId !== req.params.fileId);
+    await task.save();
+
+    res.json({ status: 'success' });
+  } catch (error) {
+    res.status(500).json({ status: 'error', message: 'delete_attachment_failed', error: error.message });
+  }
+});
+
+// Datei herunterladen
 app.get('/attachments/:fileId', async (req, res) => {
     try {
-        const fileId = new mongoose.Types.ObjectId(req.params.fileId);
-        const downloadStream = gfsBucket.openDownloadStream(fileId);
+        const token = req.headers.authorization || req.headers.Authorization;
+        if (!token) return res.status(401).json({ status: 'error', message: 'token_required' });
+        const tokenRecord = await LoginToken.findOne({ token });
+        if (!tokenRecord) return res.status(401).json({ status: 'error', message: 'invalid_token' });
 
-        res.set('Content-Type', 'application/octet-stream');
-        res.set('Content-Disposition', `attachment; filename="${fileId}"`);
+        // Suche Task mit passendem Attachment
+        const task = await Task.findOne({ "attachments.fileId": req.params.fileId });
+        if (!task) return res.status(404).json({ status: 'error', message: 'task_not_found' });
 
-        downloadStream.pipe(res);
-
-        downloadStream.on('error', (err) => {
-            logMessage("error", req.t('file_not_found'), err);
-            res.status(404).json({ status: 'error', message: req.t('file_not_found') });
-        });
-
-    } catch (error) {
-        logMessage("error", req.t('error_get_file'), error);
-        res.status(500).json({ status: 'error', message: req.t('error_get_file'), error: error.message });
-    }
-});
-
-// Datei löschen
-app.delete('/tasks/:taskId/attachments/:fileId', async (req, res) => {
-    try {
-        const task = await Task.findById(req.params.taskId);
-        if (!task) {
-            return res.status(404).json({ status: 'error', message: req.t('task_not_found') });
+        const user = await User.findById(tokenRecord.userId);
+        if (!(await hasProjectAccess(user, task.project))) {
+            return res.status(403).json({ status: 'error', message: 'not_allowed' });
         }
 
-        // Datei aus Task-Anhängen entfernen
-        task.attachments = task.attachments.filter(att => att.fileId.toString() !== req.params.fileId);
-        await task.save();
+        const att = task.attachments.find(a => a.fileId === req.params.fileId);
+        if (!att) return res.status(404).json({ status: 'error', message: 'file_not_found' });
 
-        // Datei aus GridFS löschen
-        const fileId = new mongoose.Types.ObjectId(req.params.fileId);
-        await gfsBucket.delete(fileId);
-
-        res.json({ status: 'success', message: 'Datei gelöscht' });
-
+        res.download(att.path, att.filename);
     } catch (error) {
-        logMessage("error", req.t('error_deleting_file'), error);
-        res.status(500).json({ status: 'error', message: req.t('error_deleting_file'), error: error.message });
+        res.status(500).json({ status: 'error', message: 'error_get_file', error: error.message });
     }
 });
 
-// Dtei Vorschau direkt im Browser
+// Datei-Vorschau
 app.get('/attachments/:fileId/view', async (req, res) => {
     try {
-        const fileId = new mongoose.Types.ObjectId(req.params.fileId);
-        const downloadStream = gfsBucket.openDownloadStream(fileId);
+        const token = req.headers.authorization || req.headers.Authorization;
+        if (!token) return res.status(401).json({ status: 'error', message: 'token_required' });
+        const tokenRecord = await LoginToken.findOne({ token });
+        if (!tokenRecord) return res.status(401).json({ status: 'error', message: 'invalid_token' });
 
-        downloadStream.pipe(res);
+        const task = await Task.findOne({ "attachments.fileId": req.params.fileId });
+        if (!task) return res.status(404).json({ status: 'error', message: 'task_not_found' });
 
-        downloadStream.on('error', (err) => {
-            logMessage("error", req.t('file_not_found'), err);
-            res.status(404).json({ status: 'error', message: req.t('file_not_found') });
-        });
+        const user = await User.findById(tokenRecord.userId);
+        if (!(await hasProjectAccess(user, task.project))) {
+            return res.status(403).json({ status: 'error', message: 'not_allowed' });
+        }
 
+        const att = task.attachments.find(a => a.fileId === req.params.fileId);
+        if (!att) return res.status(404).json({ status: 'error', message: 'file_not_found' });
+
+        res.sendFile(path.resolve(att.path));
     } catch (error) {
-        logMessage("error", req.t('error_get_file'), error);
-        res.status(500).json({ status: 'error', message: req.t('error_get_file'), error: error.message });
+        res.status(500).json({ status: 'error', message: 'error_get_file', error: error.message });
     }
 });
 
@@ -1760,10 +1820,21 @@ app.get('/attachments/:fileId/view', async (req, res) => {
 app.post('/tasks/:ticketNumber/comments', async (req, res) => {
     try {
         const { ticketNumber, commentText, sendByMail, emailAddress, createdByUserId, createdByEmailAddress } = req.body;
-        const task = await Task.findOne( {ticketNumber: req.params.ticketNumber});
+        const token = req.headers.authorization || req.headers.Authorization;
+        const tokenRecord = await LoginToken.findOne({ token });
+        if (!tokenRecord) {
+            return res.status(401).json({ status: 'error', message: req.t('invalid_token') });
+        }
+        const user = await User.findById(tokenRecord.userId);
 
+        const task = await Task.findOne({ ticketNumber: req.params.ticketNumber });
         if (!task) {
             return res.status(404).json({ status: 'error', message: req.t('task_not_found') });
+        }
+
+        // Zugriff prüfen
+        if (!(await hasProjectAccess(user, task.project))) {
+            return res.status(403).json({ status: 'error', message: req.t('not_allowed') });
         }
 
         const newComment = new Comment({
@@ -1773,8 +1844,8 @@ app.post('/tasks/:ticketNumber/comments', async (req, res) => {
             sendByMail: sendByMail || false,
             emailAddress: sendByMail ? emailAddress : null,
             mailSent: false,
-            createdByUserId, 
-            createdByEmailAddress
+            createdByUserId: user._id,
+            createdByEmailAddress: user.email
         });
 
         await newComment.save();
@@ -1789,11 +1860,34 @@ app.post('/tasks/:ticketNumber/comments', async (req, res) => {
 // **Kommentar löschen**
 app.delete('/comments/:id', async (req, res) => {
     try {
-        const comment = await Comment.findByIdAndDelete(req.params.id);
+        const token = req.headers.authorization || req.headers.Authorization;
+        if (!token) {
+            return res.status(401).json({ status: 'error', message: req.t('token_required') });
+        }
 
+        // Hole eingeloggten User
+        const loginToken = await LoginToken.findOne({ token });
+        if (!loginToken) {
+            return res.status(401).json({ status: 'error', message: req.t('invalid_token') });
+        }
+        const user = await User.findById(loginToken.userId);
+        if (!user) {
+            return res.status(404).json({ status: 'error', message: req.t('user_not_found') });
+        }
+
+        // Hole Kommentar
+        const comment = await Comment.findById(req.params.id);
         if (!comment) {
             return res.status(404).json({ status: 'error', message: req.t('comment_not_found') });
         }
+
+        // Admin darf alles löschen, normaler User nur eigene Kommentare
+        const isOwner = comment.createdByUserId?.toString() === user._id.toString();
+        if (!user.isAdmin && !isOwner) {
+            return res.status(403).json({ status: 'error', message: req.t('not_allowed_to_delete_comment') });
+        }
+
+        await Comment.findByIdAndDelete(req.params.id);
 
         res.json({ status: 'success', message: 'Kommentar gelöscht' });
 
@@ -1805,6 +1899,23 @@ app.delete('/comments/:id', async (req, res) => {
 // **Alle Kommentare eines Tasks abrufen**
 app.get('/tasks/:ticketNumber/comments', async (req, res) => {
     try {
+        const token = req.headers.authorization || req.headers.Authorization;
+        const tokenRecord = await LoginToken.findOne({ token });
+        if (!tokenRecord) {
+            return res.status(401).json({ status: 'error', message: req.t('invalid_token') });
+        }
+        const user = await User.findById(tokenRecord.userId);
+
+        const task = await Task.findOne({ ticketNumber: req.params.ticketNumber });
+        if (!task) {
+            return res.status(404).json({ status: 'error', message: req.t('task_not_found') });
+        }
+
+        // Zugriff prüfen
+        if (!(await hasProjectAccess(user, task.project))) {
+            return res.status(403).json({ status: 'error', message: req.t('not_allowed') });
+        }
+
         const comments = await Comment.find({ ticketNumber: req.params.ticketNumber });
 
         if (!comments.length) {
@@ -1824,22 +1935,22 @@ app.post('/tasks/:taskId/time-tracking', async (req, res) => {
     try {
         const { startTime, endTime, description } = req.body;
         const task = await Task.findById(req.params.taskId);
-        const loginToken = req.headers.authorization
-        
+        const loginToken = req.headers.authorization || req.headers.Authorization;
+
         // Token validieren und Benutzer-ID abrufen
         const tokenData = await LoginToken.findOne({ token: loginToken });
         if (!tokenData) {
             return res.status(401).json({ status: "error", message: req.t('invalid_token') });
         }
-        const userId = tokenData.userId;
-
+        const user = await User.findById(tokenData.userId);
 
         if (!task) {
             return res.status(404).json({ status: 'error', message: req.t('task_not_found') });
         }
 
-        if (!userId) {
-            return res.status(404).json({ status: 'error', message: req.t('user_not_found') });
+        // Zugriff prüfen
+        if (!(await hasProjectAccess(user, task.project))) {
+            return res.status(403).json({ status: 'error', message: req.t('not_allowed') });
         }
 
         if (!startTime || !endTime) {
@@ -1849,7 +1960,7 @@ app.post('/tasks/:taskId/time-tracking', async (req, res) => {
 
         const newEntry = new TimeTracking({
             taskId: task._id,
-            userId: userId,
+            userId: user._id,
             startTime: new Date(startTime),
             endTime: new Date(endTime),
             duration: durationMinutes,
@@ -1865,17 +1976,43 @@ app.post('/tasks/:taskId/time-tracking', async (req, res) => {
     }
 });
 
-
 // **Alle erfassten Zeiten für einen Task abrufen**
 app.get('/tasks/:taskId/time-tracking', async (req, res) => {
     try {
-        const entries = await TimeTracking.find({ taskId: req.params.taskId });
+        const token = req.headers.authorization || req.headers.Authorization;
+        const tokenRecord = await LoginToken.findOne({ token });
+        if (!tokenRecord) {
+            return res.status(401).json({ status: 'error', message: req.t('invalid_token') });
+        }
+        const user = await User.findById(tokenRecord.userId);
 
-        if (!entries.length) {
-            return res.status(404).json({ status: 'error', message: req.t('no_time_records_found') });
+        const task = await Task.findById(req.params.taskId);
+        if (!task) {
+            return res.status(404).json({ status: 'error', message: req.t('task_not_found') });
         }
 
-        res.json({ status: 'success', timeEntries: entries });
+        // Zugriff prüfen
+        if (!(await hasProjectAccess(user, task.project))) {
+            return res.status(403).json({ status: 'error', message: req.t('not_allowed') });
+        }
+
+        const entries = await TimeTracking.find({ taskId: req.params.taskId });
+
+        const entriesWithUser = await Promise.all(entries.map(async entry => {
+        const user = await User.findById(entry.userId);
+        return {
+            ...entry.toObject(),
+            createdByFirstname: user ? user.firstname : "",
+            createdByLastname: user ? user.lastname : "",
+            createdByUsername: user ? user.username : ""
+        };
+        }));
+
+        if (!entriesWithUser.length) {
+        return res.status(404).json({ status: 'error', message: req.t('no_time_records_found') });
+        }
+
+        res.json({ status: 'success', timeEntries: entriesWithUser });
 
     } catch (error) {
         res.status(500).json({ status: 'error', message: req.t('error_get_time_records'), error: error.message });
@@ -1884,13 +2021,31 @@ app.get('/tasks/:taskId/time-tracking', async (req, res) => {
 
 // **Einzelne erfasste Zeit löschen**
 app.delete('/time-tracking/:id', async (req, res) => {
-    console.log("DEBUG")
     try {
-        const entry = await TimeTracking.findByIdAndDelete(req.params.id);
+        const token = req.headers.authorization || req.headers.Authorization;
+        const tokenRecord = await LoginToken.findOne({ token });
+        if (!tokenRecord) {
+            return res.status(401).json({ status: 'error', message: req.t('invalid_token') });
+        }
+        const user = await User.findById(tokenRecord.userId);
 
+        const entry = await TimeTracking.findById(req.params.id);
         if (!entry) {
             return res.status(404).json({ status: 'error', message: req.t('time_record_not_found') });
         }
+
+        // Hole zugehörigen Task
+        const task = await Task.findById(entry.taskId);
+        if (!task) {
+            return res.status(404).json({ status: 'error', message: req.t('task_not_found') });
+        }
+
+        // Zugriff prüfen
+        if (!(await hasProjectAccess(user, task.project))) {
+            return res.status(403).json({ status: 'error', message: req.t('not_allowed') });
+        }
+
+        await TimeTracking.findByIdAndDelete(req.params.id);
 
         res.json({ status: 'success', message: 'Zeiterfassung gelöscht' });
 
@@ -1961,7 +2116,7 @@ app.get('/search', async (req, res) => {
 app.get('/backup/list', (req, res) => {
     try {
         const backupFiles = fs.readdirSync(BACKUP_DIR)
-            .filter(file => file.endsWith('.json.gz')); // Nur die Backups mit der Endung .json.gz auswählen
+            .filter(file => !file.startsWith('.')); // Alle sichtbaren Dateien
 
         if (backupFiles.length === 0) {
             return res.status(404).json({ status: "error", message: req.t('no_backups_found') });
@@ -1972,7 +2127,6 @@ app.get('/backup/list', (req, res) => {
         res.status(500).json({ status: "error", message: req.t('error_fetching_backups'), error: error.message });
     }
 });
-
 // Backup erstellen
 app.post('/backup/create', async (req, res) => {
     try {
@@ -2028,36 +2182,19 @@ app.get('/backup/export/:fileName', (req, res) => {
     }
 });
 
-setTimeout(() => {
-    if (!upload) {
-        logMessage("error", 'upload_not_initialized_mongodb_not_connected');
-    } else {
-            // Backup importieren
-            app.post('/backup/import', upload.single('backup'), async (req, res) => {
-                try {
-                    if (!req.file) {
-                        return res.status(400).json({ status: "error", message: req.t('no_backup_file_provided') });
-                    }
-
-                    const backupPath = path.join(BACKUP_DIR, req.file.originalname);
-                    
-                    if (fs.existsSync(backupPath)) {
-                        return res.status(400).json({ status: "error", message: req.t('backup_already_exists') });
-                    }
-
-                    fs.writeFileSync(backupPath, req.file.buffer);
-
-                    res.json({ status: "success", message: req.t('backup_uploaded'), fileName: req.file.originalname });
-                } catch (error) {
-                    res.status(500).json({ status: "error", message: req.t('error_importing_backup'), error: error.message });
-                }
-            });
-
-
-
+// Backup-Import (Upload)
+app.post('/backup/import', upload.single('file'), (req, res) => {
+    try {
+        if (!req.file) {
+            return res.status(400).json({ status: "error", message: req.t('no_backup_file_provided') });
+        }
+        // Datei ist bereits im BACKUP_DIR gespeichert!
+        res.json({ status: "success", message: req.t('backup_uploaded'), fileName: req.file.originalname });
+    } catch (error) {
+        res.status(500).json({ status: "error", message: req.t('error_importing_backup'), error: error.message });
     }
+});
 
-}, 5000); // Warte 5 Sekunden, um sicherzustellen, dass `upload` gesetzt wurde
 // Funktion, um alle Felder eines Dokuments rekursiv auf ObjectIds zu prüfen und zu konvertieren
 const convertObjectIds = (obj) => {
     if (obj && typeof obj === 'object') {
@@ -2351,7 +2488,48 @@ app.delete('/customFields/tasks/:id', authMiddleware, async (req, res) => {
     }
 });
 
+// Task-Details abrufen (GESCHÜTZT)
+app.get('/tasks/:id', async (req, res) => {
+    try {
+        const token = req.headers.authorization || req.headers.Authorization;
+        const tokenRecord = await LoginToken.findOne({ token });
+        if (!tokenRecord) {
+            return res.status(401).json({ status: 'error', message: req.t('invalid_token') });
+        }
+        const user = await User.findById(tokenRecord.userId);
+
+        const task = await Task.findById(req.params.id)
+            .populate('assignedUsers', 'firstname lastname username')
+            .populate('subtaskIds', 'title status priority');
+        if (!task) {
+            return res.status(404).json({ status: 'error', message: req.t('task_not_found') });
+        }
+
+        // Zugriff prüfen
+        if (!(await hasProjectAccess(user, task.project))) {
+            return res.status(403).json({ status: 'error', message: req.t('not_allowed') });
+        }
+
+        res.json({ status: 'success', task });
+    } catch (error) {
+        res.status(500).json({ status: 'error', message: req.t('error_get_task'), error: error.message });
+    }
+});
+
+// Funktion, um zu überprüfen, ob ein Benutzer Zugriff auf ein Projekt hat
+async function hasProjectAccess(user, projectId) {
+    if (!user) return false;
+    if (user.isAdmin) return true;
+    const project = await Project.findById(projectId);
+    if (!project) return false;
+    if (project.creatorId && project.creatorId.toString() === user._id.toString()) return true;
+    if (project.members.map(m => m.toString()).includes(user._id.toString())) return true;
+    return false;
+}
+
 // SERVER STARTEN
-app.listen(PORT, () => {
+mongoose.connection.once('open', () => {
+  app.listen(PORT, () => {
     logMessage('success', `Server started on http://localhost:${PORT}`);
+  });
 });

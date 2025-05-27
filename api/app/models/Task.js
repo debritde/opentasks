@@ -14,7 +14,8 @@ const TaskSchema = new mongoose.Schema({
     attachments: [
         {
             filename: { type: String, required: true },
-            fileId: { type: mongoose.Schema.Types.ObjectId, required: true }
+            fileId: { type: String, required: true },
+            path: { type: String, required: false },    // absoluter Pfad
         }
     ],
     startDate: { type: Date, required: false },

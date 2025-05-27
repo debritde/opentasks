@@ -1,11 +1,11 @@
 import { useState, useEffect } from "react";
-import { Link, Outlet } from "react-router-dom";
+import { Link, Outlet, useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { themeChange } from "theme-change";
 import Search from "../components/Search";
+import TaskViewModal from "../components/TaskViewModal";
 import "../i18n";
 import "../styles/layout_dark.css";
-import config from "../config/config.json";
 
 const apiUrl = import.meta.env.VITE_APP_API_URL || "http://localhost:3001";
 
@@ -16,11 +16,35 @@ const NavBar = () => {
   const [searchQuery, setSearchQuery] = useState("");
   const [user, setUser] = useState(null);
   const [isNavCollapsed, setIsNavCollapsed] = useState(false);
+  const [globalTimers, setGlobalTimers] = useState([]);
+  const [openTaskId, setOpenTaskId] = useState(null);
+  const [openTaskData, setOpenTaskData] = useState(null);
+  const navigate = useNavigate();
 
   useEffect(() => {
     themeChange(false);
     fetchUser();
     i18n.changeLanguage(currentLanguage);
+  }, []);
+
+  useEffect(() => {
+    // Prüfe alle 1s, ob ein Timer läuft (aus localStorage)
+    const interval = setInterval(() => {
+      const trackingTimes = JSON.parse(localStorage.getItem("trackingTimes") || "{}");
+      const timers = Object.keys(trackingTimes).map(taskId => {
+        const tracking = trackingTimes[taskId];
+        const start = new Date(tracking.start);
+        const taskTitle = tracking.title;
+        const now = new Date();
+        const diff = Math.floor((now - start) / 1000);
+        const hours = String(Math.floor(diff / 3600)).padStart(2, '0');
+        const minutes = String(Math.floor((diff % 3600) / 60)).padStart(2, '0');
+        const seconds = String(diff % 60).padStart(2, '0');
+        return { taskId, elapsed: `${hours}:${minutes}:${seconds}`, taskTitle };
+      });
+      setGlobalTimers(timers);
+    }, 1000);
+    return () => clearInterval(interval);
   }, []);
 
   const fetchUser = async () => {
@@ -66,6 +90,21 @@ const NavBar = () => {
 
   const toggleNav = () => setIsNavCollapsed(!isNavCollapsed);
 
+  const openTaskModal = async (taskId) => {
+    try {
+      const res = await fetch(`${apiUrl}/tasks/${taskId}`, {
+        headers: { "Authorization": localStorage.getItem("token") }
+      });
+      const data = await res.json();
+      if (data.status === "success") {
+        setOpenTaskData(data.task);
+        setOpenTaskId(taskId);
+      }
+    } catch (err) {
+      alert("Fehler beim Laden des Tasks.");
+    }
+  };
+
   return (
     <div id="mainLayout">
       <div
@@ -77,6 +116,34 @@ const NavBar = () => {
             <img src="/logo.png" height="40px" />
             {!isNavCollapsed && <h1>{t("OpenTasks")}</h1>}
           </div>
+          {globalTimers.length > 0 && (
+            <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 6 }}>
+              {globalTimers.map(timer => (
+                <div
+                  key={timer.taskId}
+                  style={{
+                    marginLeft: isNavCollapsed ? 0 : 2,
+                    padding: isNavCollapsed ? "4px 8px" : "6px 12px",
+                    fontSize: isNavCollapsed ? "10px" : "12px",
+                    minWidth: isNavCollapsed ? "unset" : 160,
+                    margin: isNavCollapsed ? "0px" : "0px",
+
+                    cursor: "pointer"
+                  }}
+                  className="timer-badge"
+                  title={timer.taskTitle ? timer.taskTitle : ""}
+                  onClick={() => openTaskModal(timer.taskId)}
+                >
+                  ⏱️ {timer.elapsed}
+                  {!isNavCollapsed && timer.taskTitle && (
+                    <span style={{ marginLeft: 8, fontWeight: 500 }}>
+                      {timer.taskTitle}
+                    </span>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
         </div>
         <div id="nav-body">
           <Link onClick={() => setSearchQuery("")} id="nav-item" to="/">
@@ -147,6 +214,15 @@ const NavBar = () => {
           {searchQuery !== "" ? <Search query={searchQuery} /> : <Outlet />}
         </div>
       </div>
+      {openTaskData && (
+        <TaskViewModal
+          task={openTaskData}
+          onClose={() => {
+            setOpenTaskId(null);
+            setOpenTaskData(null);
+          }}
+        />
+      )}
     </div>
   );
 };
