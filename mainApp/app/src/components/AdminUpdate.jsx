@@ -98,19 +98,106 @@ const UpdaterPage = () => {
       // Simulierter Log-Stream
       const fakeSections = [
         {
-          header: "Progress: 10%",
-          preview: "Starte Update...",
-          details: ["Lade Dateien herunter...", "Prüfe Integrität..."],
+          header: "🌈 Progress: 5%",
+          preview: "🦄 Initialisiere Regenbogen-Update...",
+          details: [
+        "🧙‍♂️ Beschwöre magische Einhörner...",
+        "🍭 Sammle bunte Lollis...",
+        "🎩 Ziehe Kaninchen aus dem Hut...",
+        "💾 Lade Glitzer-Konfiguration...",
+        "🤹‍♀️ Jongliere mit Bits und Bytes...",
+          ],
         },
         {
-          header: "Progress: 50%",
-          preview: "Installiere Update...",
-          details: ["Entpacke Dateien...", "Führe Migrationen aus..."],
+          header: "🍕 Progress: 15%",
+          preview: "🍕 Bestelle Pizza für das Entwicklerteam...",
+          details: [
+        "📞 Rufe Pizzaboten an...",
+        "🧀 Extra Käse ausgewählt!",
+        "🍄 Pilze abgewählt (Teamentscheidung)...",
+        "⏳ Warte auf Lieferung...",
+        "🍕 Pizza ist unterwegs!",
+          ],
         },
         {
-          header: "Progress: 100%",
-          preview: "Update abgeschlossen!",
-          details: ["Bereinige temporäre Dateien...", "Update erfolgreich!"],
+          header: "🐱 Progress: 25%",
+          preview: "🐾 Lasse Katzen über die Tastatur laufen...",
+          details: [
+        "😺 Katze tippt: 'asdkjfhg'",
+        "😼 Katze löscht versehentlich System32... (nur Spaß!)",
+        "🐾 Pfotenabdrücke werden entfernt...",
+        "🧹 Tastatur gereinigt.",
+          ],
+        },
+        {
+          header: "🚀 Progress: 35%",
+          preview: "🚀 Starte Raketen für schnelleren Download...",
+          details: [
+        "🛰️ Satellitenverbindung hergestellt...",
+        "📡 Empfangsstärke: 9001%",
+        "💥 Downloadgeschwindigkeit: Lichtgeschwindigkeit erreicht!",
+        "🛸 Unerwartetes UFO gesichtet – ignoriert.",
+          ],
+        },
+        {
+          header: "🎶 Progress: 45%",
+          preview: "🎵 Spiele motivierende Musik ab...",
+          details: [
+        "🎸 Gitarren-Solo gestartet...",
+        "🥁 Schlagzeugwirbel...",
+        "🎤 Entwickler singen mit: 'Never gonna give you up...'",
+        "🎧 Musiklautstärke auf Maximum!",
+          ],
+        },
+        {
+          header: "🦖 Progress: 55%",
+          preview: "🦖 Dino-Modus aktiviert...",
+          details: [
+        "🦕 Lade prähistorische Updates...",
+        "🦴 Finde Fossilien im Code...",
+        "🌋 Simuliere Vulkanausbruch (nur visuell)...",
+        "🦖 Dino tanzt den Moonwalk.",
+          ],
+        },
+        {
+          header: "🧊 Progress: 65%",
+          preview: "🧊 Kühle Server mit Eiswürfeln...",
+          details: [
+        "❄️ Eiswürfelmaschine läuft heiß...",
+        "🥶 Server-Temperatur: angenehm frisch.",
+        "🍹 Entwickler bekommen Cocktails.",
+        "🧊 Eiswürfel im RAM gefunden – entfernt.",
+          ],
+        },
+        {
+          header: "🤖 Progress: 75%",
+          preview: "🤖 KI übernimmt das Update...",
+          details: [
+        "💡 KI denkt nach...",
+        "🧠 KI entscheidet sich für ein Nickerchen.",
+        "🤖 KI ist wieder wach und arbeitet weiter.",
+        "🦾 KI optimiert alles auf 1337%",
+          ],
+        },
+        {
+          header: "🦸‍♂️ Progress: 85%",
+          preview: "🦸‍♂️ Superhelden helfen beim Endspurt...",
+          details: [
+        "🕸️ Spider-Man schwingt durch den Code...",
+        "🦇 Batman debuggt im Dunkeln...",
+        "🦸‍♀️ Wonder Woman bringt Kaffee.",
+        "💥 Bugs werden heldenhaft besiegt!",
+          ],
+        },
+        {
+          header: "🎉 Progress: 100%",
+          preview: "🎉 Update abgeschlossen! Party-Modus aktiviert!",
+          details: [
+        "🥳 Konfetti wird verteilt...",
+        "🍾 Sektkorken knallen...",
+        "🎂 Kuchen für alle!",
+        "✅ Update erfolgreich! Viel Spaß mit der neuen Version!",
+          ],
         },
       ];
 
@@ -128,7 +215,7 @@ const UpdaterPage = () => {
           setTimeout(() => {
             idx++;
             nextSection();
-          }, 1000);
+          }, 2500);
         } else {
           setUpdating(false);
           setUpdateFinished(true);
@@ -206,12 +293,11 @@ const UpdaterPage = () => {
 
   // Wenn logs sich ändern, offene Sections beibehalten (neue Sections bleiben zu)
   useEffect(() => {
+    const sectionCount = logs.filter((line) => /\bProgress:\s*\d+%/.test(line)).length;
     setOpenSections((prev) => {
-      // Neue Sections werden zugeklappt, bestehende bleiben wie sie sind
-      const sectionCount = logs.filter((line) => /^Progress:\s*\d+%/.test(line)).length;
-      const newState = {};
+      const newState = { ...prev };
       for (let i = 0; i < sectionCount; i++) {
-        newState[i] = prev[i] || false;
+        if (!(i in newState)) newState[i] = false;
       }
       return newState;
     });
@@ -222,7 +308,7 @@ const UpdaterPage = () => {
     const sections = [];
     let currentSection = null;
     logs.forEach((line) => {
-      if (/^Progress:\s*\d+%/.test(line)) {
+      if (/\bProgress:\s*\d+%/.test(line)) { // <-- Regex angepasst!
         if (currentSection) {
           sections.push(currentSection);
         }
@@ -249,8 +335,35 @@ const UpdaterPage = () => {
       }));
     };
 
+    const logContainerRef = useRef(null);
+    const [userScrolledUp, setUserScrolledUp] = useState(false);
+
+    // Beobachte Scroll-Verhalten
+    useEffect(() => {
+      const el = logContainerRef.current;
+      if (!el) return;
+
+      const handleScroll = () => {
+        const isAtBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
+        setUserScrolledUp(!isAtBottom);
+      };
+
+      el.addEventListener("scroll", handleScroll);
+      return () => el.removeEventListener("scroll", handleScroll);
+    }, []);
+
+    // Automatisch scrollen nur, wenn der Nutzer *nicht* manuell hochgescrollt hat
+    useEffect(() => {
+      const el = logContainerRef.current;
+      if (!el || userScrolledUp) return;
+
+      el.scrollTop = el.scrollHeight;
+    }, [logs, userScrolledUp]);
+
+
     return (
       <div
+        ref={logContainerRef}
         style={{
           maxHeight: "35vh",
           overflowY: "auto",
