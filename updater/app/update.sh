@@ -5,7 +5,7 @@
 ### VIELLEICHT updater.sh DURCHREICHEN PER MAPPING STATT IM IMAGE BUILD ZU KOPIEREN ###
 #######################################################################################
 
-echo "Progress: 15%"
+echo "Progress: 5%"
 echo "🚀 Start Update-Process..."
 
 # In das Projektverzeichnis wechseln
@@ -30,34 +30,42 @@ else
 fi
 
 echo -e "\n"
-echo "Progress: 30%"
+echo "Progress: 15%"
 echo "🔄 Pull newst Version with Git Pull ..."
 git pull "$AUTH_REPO_URL" main || { echo "❌ Fehler bei Git Pull"; exit 1; }
 
 echo -e "\n"
-echo "Progress: 45%"
+echo "Progress: 30%"
 echo "📦 Build all Docker-Containers ..."
 docker compose -f ./docker-compose.prod.yml build --no-cache || { echo "❌ Fehler beim Builden der Container"; exit 1; }
 
 echo -e "\n"
+echo "Progress: 50%"
+echo "🧹 Entferne alte Container (außer updater)..."
+# Hole alle Container-Namen aus docker compose ps, außer die mit "updater"
+containers_to_remove=$(docker compose -f ./docker-compose.prod.yml ps -q | xargs docker inspect --format '{{.Name}}' | grep -v updater | sed 's#^/##')
+
+if [ -n "$containers_to_remove" ]; then
+  echo "Folgende Container werden entfernt:"
+  echo "$containers_to_remove"
+  docker rm -f $containers_to_remove
+else
+  echo "Keine zu entfernenden Container gefunden."
+fi
+
+echo -e "\n"
 echo "Progress: 60%"
 echo "🚀 Restart Docker-Container mainApp ..."
-docker compose -f ./docker-compose.prod.yml down mainApp || { echo "❌ Fehler beim herunterfahren der Container"; exit 1; }
-docker compose -f ./docker-compose.prod.yml rm -f mainApp || { echo "❌ Fehler beim löschen der Container"; exit 1; }
 docker compose -f ./docker-compose.prod.yml up -d mainApp || { echo "❌ Fehler beim Neustart der Container"; exit 1; }
 
 echo -e "\n"
 echo "Progress: 75%"
 echo "🚀 Restart Docker-Container mongodb ..."
-docker compose -f ./docker-compose.prod.yml down mongodb || { echo "❌ Fehler beim herunterfahren der Container"; exit 1; }
-docker compose -f ./docker-compose.prod.yml rm -f mongodb || { echo "❌ Fehler beim löschen der Container"; exit 1; }
 docker compose -f ./docker-compose.prod.yml up -d mongodb || { echo "❌ Fehler beim Neustart der Container"; exit 1; }
 
 echo -e "\n"
-echo "Progress: 90%"
+echo "Progress: 85%"
 echo "🚀 Restart Docker-Container api ..."
-docker compose -f ./docker-compose.prod.yml down api || { echo "❌ Fehler beim herunterfahren der Container"; exit 1; }
-docker compose -f ./docker-compose.prod.yml rm -f api || { echo "❌ Fehler beim löschen der Container"; exit 1; }
 docker compose -f ./docker-compose.prod.yml up -d api || { echo "❌ Fehler beim Neustart der Container"; exit 1; }
 
 
