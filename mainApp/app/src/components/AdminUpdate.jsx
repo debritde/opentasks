@@ -186,13 +186,13 @@ const UpdaterPage = () => {
         if (progressMatch) {
           setProgress(Number(progressMatch[1]));
 
-          if (Number(progressMatch[1] == 100)) {
+          if (Number(progressMatch[1]) === 100) {
             setUpdateFinished(true);
-            await setUpdateAvailable(false);
-            await setLocalVersion(null);
-            await setRemoteVersion(null);
-            await setIsLoading(true);
-            checkForUpdate();
+            // await setUpdateAvailable(false);
+            // await setLocalVersion(null);
+            // await setRemoteVersion(null);
+            // await setIsLoading(true);
+            // checkForUpdate();
           }
         }
       }
