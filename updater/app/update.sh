@@ -42,16 +42,19 @@ docker compose -f ./docker-compose.prod.yml build --no-cache || { echo "❌ Fehl
 echo -e "\n"
 echo "Progress: 60%"
 echo "🚀 Restart Docker-Container mainApp ..."
+docker compose -f ./docker-compose.prod.yml down mainApp || { echo "❌ Fehler beim herunterfahren der Container"; exit 1; }
 docker compose -f ./docker-compose.prod.yml up -d mainApp || { echo "❌ Fehler beim Neustart der Container"; exit 1; }
 
 echo -e "\n"
 echo "Progress: 75%"
 echo "🚀 Restart Docker-Container mongodb ..."
+docker compose -f ./docker-compose.prod.yml down mongodb || { echo "❌ Fehler beim herunterfahren der Container"; exit 1; }
 docker compose -f ./docker-compose.prod.yml up -d mongodb || { echo "❌ Fehler beim Neustart der Container"; exit 1; }
 
 echo -e "\n"
 echo "Progress: 90%"
 echo "🚀 Restart Docker-Container api ..."
+docker compose -f ./docker-compose.prod.yml down api || { echo "❌ Fehler beim herunterfahren der Container"; exit 1; }
 docker compose -f ./docker-compose.prod.yml up -d api || { echo "❌ Fehler beim Neustart der Container"; exit 1; }
 
 
