@@ -2,7 +2,7 @@ import { useEffect, useState, useRef } from "react";
 import { useTranslation } from "react-i18next";
 
 const apiUrl = import.meta.env.VITE_APP_UPDATER_URL || "http://localhost:3002";
-const isDev = true;
+const isDev = false;
 
 const UpdaterPage = () => {
   const { t } = useTranslation();
