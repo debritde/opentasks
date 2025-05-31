@@ -389,8 +389,8 @@ const UpdaterPage = () => {
     );
   };
 
-  const showLog = updating || updateFinished;
-
+  const showLog = updating || updateFinished || logs.length > 0;
+  
   // Timer starten/stoppen
   useEffect(() => {
     if (updating) {
