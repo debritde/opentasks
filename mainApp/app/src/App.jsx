@@ -12,6 +12,7 @@ import Login from "./pages/Login";
 import config from "./config/config.json";
 import AcceptInvite from "./pages/AcceptInvite";
 import { Navigate } from "react-router-dom";
+import UserProfile from "./pages/UserProfile";
 
 const apiUrl = import.meta.env.VITE_APP_API_URL || "http://localhost:3001";
 
@@ -130,6 +131,7 @@ function App() {
         <Route path="projects" element={<Projects />} />
         <Route path="project/view/*" element={<ProjectsView />} />
         <Route path="ownUser" element={<OwnUser />} />
+        <Route path="/user/:username" element={<UserProfile />} />
         {user?.isAdmin ? <Route path="admin" element={<Admin />} /> : null }
       </Route>
     </Routes>

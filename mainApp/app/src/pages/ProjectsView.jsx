@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useLocation } from "react-router-dom";
+import { useLocation, Link } from "react-router-dom";
 import Select from "react-select";
 import { useTranslation } from "react-i18next";
 import ProgressBar from "@ramonak/react-progress-bar";
@@ -89,31 +89,45 @@ const ProjectView = () => {
     fetchUsers();
   }, [token]);
 
+  const fetchProject = async () => {
+    const token = localStorage.getItem("token");
+    if (!token) return;
+    try {
+      const response = await fetch(`${apiUrl}/projects/${projectId}`, {
+        headers: { "Authorization": token }
+      });
+      if (response.status === 403) {
+        setAccessDenied(true);
+        setProject(null);
+      } else {
+        const data = await response.json();
+        setProject(data.project);
+        setEditProject(data.project);
+        setSelectedMembers(
+          data.project.members.map(member => {
+            if (typeof member === "string") {
+              // Nur ID, also User-Objekt aus users suchen
+              const userObj = users.find(u => u.value === member);
+              return userObj ? userObj : { value: member, label: member };
+            } else {
+              // Vollständiges Objekt
+              return {
+                value: member._id || member.id || member.value,
+                label: `${member.firstname} ${member.lastname} (${member.username})`
+              };
+            }
+          })
+        );
+        setAccessDenied(false);
+      }
+    } catch (error) {
+      setAccessDenied(true);
+    } finally {
+      setLoading(false);
+    }
+  };
   
   useEffect(() => {
-    const fetchProject = async () => {
-      const token = localStorage.getItem("token");
-      if (!token) return;
-      try {
-        const response = await fetch(`${apiUrl}/projects/${projectId}`, {
-          headers: { "Authorization": token }
-        });
-        if (response.status === 403) {
-          setAccessDenied(true);
-          setProject(null);
-        } else {
-          const data = await response.json();
-          setProject(data.project);
-          setEditProject(data.project);
-          setSelectedMembers(data.project.members.map(member => ({ value: member._id, label: `${member.firstname} ${member.lastname} (${member.username})` })));
-          setAccessDenied(false);
-        }
-      } catch (error) {
-        setAccessDenied(true);
-      } finally {
-        setLoading(false);
-      }
-    };
     fetchProject();
   }, [projectId, token]);
 
@@ -225,57 +239,11 @@ const ProjectView = () => {
     if (data.status === "success") {
       setProject(data.project);
       setIsEditing(false);
-  
-      if ((project.isServiceDesk !== editProject.isServiceDesk) && (editProject.isServiceDesk == true)) {
-        await fetch(`${apiUrl}/mail2ticket`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json", "Authorization": `${token}` },
-          body: JSON.stringify({
-            projects: [data.project._id],
-            imapHost: editProject.imapHost,
-            imapPort: editProject.imapPort,
-            imapUser: editProject.imapUser,
-            imapPassword: editProject.imapPassword,
-            emailAddress: editProject.emailAddress,
-            checkPeriodInMinutes: editProject.checkPeriodInMinutes,
-            smtpHost: editProject.smtpHost,
-            smtpPort: editProject.smtpPort,
-            smtpUser: editProject.smtpUser,
-            smtpPassword: editProject.smtpPassword,
-            smtpSecure: editProject.smtpSecure
-          })
-        });
-      }
-      else if ((project.isServiceDesk == editProject.isServiceDesk) && (editProject.isServiceDesk == true)) {
-        await fetch(`${apiUrl}/mail2ticket/${project.mail2ticketConnectorId}`, {
-          method: "PUT",
-          headers: { "Content-Type": "application/json", "Authorization": `${token}` },
-          body: JSON.stringify({
-            projects: [data.project._id],
-            imapHost: editProject.imapHost,
-            imapPort: editProject.imapPort,
-            imapUser: editProject.imapUser,
-            imapPassword: editProject.imapPassword,
-            emailAddress: editProject.emailAddress,
-            checkPeriodInMinutes: editProject.checkPeriodInMinutes,
-            smtpHost: editProject.smtpHost,
-            smtpPort: editProject.smtpPort,
-            smtpUser: editProject.smtpUser,
-            smtpPassword: editProject.smtpPassword,
-            smtpSecure: editProject.smtpSecure
-          })
-        });
-      }
-      else if (project.isServiceDesk == true && editProject.isServiceDesk == false) {
-        await fetch(`${apiUrl}/mail2ticket/${project.mail2ticketConnectorId}`, {
-          method: "DELETE",
-          headers: { "Content-Type": "application/json", "Authorization": `${token}` },
-        });
-      }
+      // Jetzt funktioniert das:
+      fetchProject();
     } else {
       console.error("Fehler beim Aktualisieren des Projekts", data.message);
     }
-
   } catch (error) {
     console.error("Fehler beim Aktualisieren des Projekts", error);
   }
@@ -332,7 +300,23 @@ const ProjectView = () => {
     if (editProject.isServiceDesk) {
       await fetchMail2TicketDetails();
     }
-    await setIsEditing(true);
+    // Mitglieder korrekt setzen, falls sie noch nicht gesetzt sind
+    setSelectedMembers(
+      (editProject.members || []).map(member => {
+        if (typeof member === "string") {
+          // Nur ID, also User-Objekt aus users suchen
+          const userObj = users.find(u => u.value === member);
+          return userObj ? userObj : { value: member, label: member };
+        } else {
+          // Vollständiges Objekt
+          return {
+            value: member._id || member.id || member.value,
+            label: `${member.firstname} ${member.lastname} (${member.username})`
+          };
+        }
+      })
+    );
+    setIsEditing(true);
   };
 
   const stopEditing = async () => {
@@ -588,9 +572,14 @@ const ProjectView = () => {
                 {/* Mitglieder-Badges */}
                 <div style={{ display: "flex", flexWrap: "wrap", gap: "8px", marginTop: "8px" }}>
                   {t("members")}:{project.members && project.members.map(member => (
-                    <span key={member._id} className="user-badge">
+                    <Link
+                      key={member._id}
+                      to={`/user/${member.username}`}
+                      className="user-badge"
+                      style={{ textDecoration: "none", color: "inherit", cursor: "pointer" }}
+                    >
                       {member.firstname} {member.lastname} ({member.username})
-                    </span>
+                    </Link>
                   ))}
                 </div>
                 <div className="button-row">

@@ -212,7 +212,12 @@ i18n.use(initReactI18next).init({
         "upload": "Upload",
         "show_time_tracking": "Show Time Tracking",
         "hide_time_tracking": "Hide Time Tracking",
-        "no_attachments_found": "No attachments found"
+        "no_attachments_found": "No attachments found",
+        "elapsed_time": "Elapsed Time",
+        "new": "New",
+        "hide_new_column": "Hide 'New' column",
+        "show_new_column": "Show 'New' column",
+        "all": "All",
       }
     },
     de: {
@@ -421,7 +426,12 @@ i18n.use(initReactI18next).init({
         "upload": "Hochladen",
         "show_time_tracking": "Zeige Zeiterfassung",
         "hide_time_tracking": "Verstecke Zeiterfassung",
-        "no_attachments_found": "Keine Anhänge gefunden"
+        "no_attachments_found": "Keine Anhänge gefunden",
+        "elapsed_time": "Verstrichene Zeit",
+        "new": "Neu",
+        "hide_new_column": "'Neu' Spalte ausblenden",
+        "show_new_column": "'Neu' Spalte anzeigen",
+        "all": "Alle",
       }
     }
   },

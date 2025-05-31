@@ -35,12 +35,13 @@ const NavBar = () => {
         const tracking = trackingTimes[taskId];
         const start = new Date(tracking.start);
         const taskTitle = tracking.title;
+        const ticketNumber = tracking.ticketNumber;
         const now = new Date();
         const diff = Math.floor((now - start) / 1000);
         const hours = String(Math.floor(diff / 3600)).padStart(2, '0');
         const minutes = String(Math.floor((diff % 3600) / 60)).padStart(2, '0');
         const seconds = String(diff % 60).padStart(2, '0');
-        return { taskId, elapsed: `${hours}:${minutes}:${seconds}`, taskTitle };
+        return { taskId, elapsed: `${hours}:${minutes}:${seconds}`, taskTitle, ticketNumber };
       });
       setGlobalTimers(timers);
     }, 1000);
@@ -121,20 +122,13 @@ const NavBar = () => {
               {globalTimers.map(timer => (
                 <div
                   key={timer.taskId}
-                  style={{
-                    marginLeft: isNavCollapsed ? 0 : 2,
-                    padding: isNavCollapsed ? "4px 8px" : "6px 12px",
-                    fontSize: isNavCollapsed ? "10px" : "12px",
-                    minWidth: isNavCollapsed ? "unset" : 160,
-                    margin: isNavCollapsed ? "0px" : "0px",
 
-                    cursor: "pointer"
-                  }}
                   className="timer-badge"
                   title={timer.taskTitle ? timer.taskTitle : ""}
                   onClick={() => openTaskModal(timer.taskId)}
-                >
-                  ⏱️ {timer.elapsed}
+                >{console.log(timer)}
+                  <span className="timer-badge-clock">⏱️</span> <span className="timer-badge-time">{timer.elapsed}</span>
+                  <span className={isNavCollapsed ? "timer-badge-ticketNumber" : "hide"}>#{timer.ticketNumber}</span>
                   {!isNavCollapsed && timer.taskTitle && (
                     <span style={{ marginLeft: 8, fontWeight: 500 }}>
                       {timer.taskTitle}
@@ -147,17 +141,23 @@ const NavBar = () => {
         </div>
         <div id="nav-body">
           <Link onClick={() => setSearchQuery("")} id="nav-item" to="/">
-            <span role="img" aria-label="Home">🏠 </span>
-            {!isNavCollapsed && t("home")}
+            <span className="nav-item-inner">
+              <span className="nav-item-icon" aria-label="Home">🏠</span>
+              {!isNavCollapsed && <span className="nav-item-text">{t("home")}</span>}
+            </span>
           </Link>
           <Link onClick={() => setSearchQuery("")} id="nav-item" to="/projects">
-            <span role="img" aria-label="Projects">📁 </span>
-            {!isNavCollapsed && t("projects")}
+            <span className="nav-item-inner">
+              <span className="nav-item-icon" aria-label="Projects">📁</span>
+              {!isNavCollapsed && <span className="nav-item-text">{t("projects")}</span>}
+            </span>
           </Link>
           {user?.isAdmin && (
             <Link onClick={() => setSearchQuery("")} id="nav-item" to="/admin">
-              <span role="img" aria-label="Admin">🛠️ </span>
-              {!isNavCollapsed && t("Admin")}
+              <span className="nav-item-inner">
+                <span className="nav-item-icon" aria-label="Admin">🛠️</span>
+                {!isNavCollapsed && <span className="nav-item-text">{t("Admin")}</span>}
+              </span>
             </Link>
           )}
         </div>
@@ -178,8 +178,14 @@ const NavBar = () => {
             className={`theme-toggle ${isNavCollapsed ? "collapsed" : ""}`}
             title={theme === "dark" ? t("light_mode") : t("dark_mode")}
           >
-            {theme === "dark" ? "☀️" : "🌙"}
-            {!isNavCollapsed && (theme === "dark" ? " " + t("light_mode") : " " + t("dark_mode"))}
+            <span className="theme-toggle-inner">
+              <span className="theme-toggle-icon">{theme === "dark" ? "☀️" : "🌙"}</span>
+              {!isNavCollapsed && (
+                <span className="theme-toggle-text">
+                  {theme === "dark" ? t("light_mode") : t("dark_mode")}
+                </span>
+              )}
+            </span>
           </button>
           <button
             id="nav-item"
@@ -187,11 +193,13 @@ const NavBar = () => {
             className={`logout-button${isNavCollapsed ? " collapsed" : ""}`}
             title={t("logout")}
           >
-            <span role="img" aria-label="Logout">🚪</span>
-            {!isNavCollapsed && t("logout")}
+            <span className="nav-item-inner">
+              <span className="nav-item-icon" aria-label="Logout">🚪</span>
+              {!isNavCollapsed && <span className="nav-item-text">{t("logout")}</span>}
+            </span>
           </button>
           <div
-            id="nav-item"
+            id="nav-toggle-button"
             onClick={toggleNav}
             title={isNavCollapsed ? t("expand") : t("collapse")}
           >

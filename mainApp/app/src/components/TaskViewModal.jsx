@@ -1,7 +1,7 @@
-import { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import Select from "react-select";
 import config from "../config/config.json";
-import { useLocation } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import DOMPurify from 'dompurify'
 import no from '../functions/no.js'
@@ -9,6 +9,8 @@ import bravo from '../functions/bravo.js'
 import lol from '../functions/lol.js'
 import spongebob from '../functions/spongebob.js'
 import { Collapse } from 'react-collapse';
+import ReactMarkdown from "react-markdown";
+import { MentionsInput, Mention } from "react-mentions";
 
 const apiUrl = import.meta.env.VITE_APP_API_URL || "http://localhost:3001";
 
@@ -69,6 +71,7 @@ const TaskViewModal = ({ task, onClose }) => {
   const [showTimeTrackingCreate, setShowTimeTrackingCreate] = useState(false);
   const [showTimeTracking, setShowTimeTracking] = useState(false);
   const [manualDuration, setManualDuration] = useState("00:00:00");
+  const [userSuggestions, setUserSuggestions] = useState([]);
 
   // Hilfsfunktion zum Umwandeln von hh:mm:ss in Sekunden
   const parseDuration = (str) => {
@@ -178,7 +181,9 @@ const TaskViewModal = ({ task, onClose }) => {
     setManualDuration("00:00:00");
     // Speichere Task-ID, Startzeit und Titel im trackingTimes
     const storedTracking = JSON.parse(localStorage.getItem("trackingTimes")) || {};
-    storedTracking[task._id] = { start: now, title: task.title };
+    {console.log(task)}
+    storedTracking[task._id] = { start: now, title: task.title, ticketNumber: task.ticketNumber };
+    console.log(storedTracking[task._id])
     localStorage.setItem("trackingTimes", JSON.stringify(storedTracking));
   };
 
@@ -318,7 +323,7 @@ const TaskViewModal = ({ task, onClose }) => {
     })
       .then((res) => res.json())
       .then((data) => {
-        const newItem = { name: "new", color: "#ffcc00", kanbanIndex: "0", isDone: false };
+        const newItem = { name: t("new"), color: "#ffcc00", kanbanIndex: "0", isDone: false };
         const updatedData = [...data, newItem];
         setStatuses(updatedData);
       })
@@ -366,15 +371,25 @@ const TaskViewModal = ({ task, onClose }) => {
                 });
                 if (userRes.ok) {
                   const userData = await userRes.json();
-                  comment.createdByFirstname = `${userData.user.firstname}`;
-                  comment.createdByLastname = `${userData.user.lastname} `;
-                  comment.createdByUsername = `${userData.user.username}`;
+                  if (userData && userData.user) {
+                    comment.createdByFirstname = `${userData.user.firstname || ""}`;
+                    comment.createdByLastname = `${userData.user.lastname || ""}`;
+                    comment.createdByUsername = `${userData.user.username || ""}`;
+                  } else {
+                    comment.createdByFirstname = "";
+                    comment.createdByLastname = "";
+                    comment.createdByUsername = "Unbekannt";
+                  }
                 } else {
-                  comment.createdByUser = "Unbekannter Benutzer";
+                  comment.createdByFirstname = "";
+                  comment.createdByLastname = "";
+                  comment.createdByUsername = "Unbekannt";
                 }
               } catch (error) {
                 console.error("Fehler beim Abrufen von Benutzerdaten:", error);
-                comment.createdByUser = "Fehler beim Laden";
+                comment.createdByFirstname = "";
+                comment.createdByLastname = "";
+                comment.createdByUsername = "Fehler";
               }
               return comment;
             })
@@ -509,7 +524,9 @@ const TaskViewModal = ({ task, onClose }) => {
         }
     
         const tokenData = await tokenResponse.json();
+        console.log("DEBUG: Token-Daten", tokenData);
         const currentUserId = tokenData.user._id;
+        console.log("DEBUG: Aktuelle UserID", currentUserId);
     
         // Abrufen der Benutzerinformationen mit der ermittelten UserID
         const response = await fetch(`${apiUrl}/users/${currentUserId}`, {
@@ -584,6 +601,16 @@ const TaskViewModal = ({ task, onClose }) => {
       }
   };
 
+const [idToUsernameMap, setIdToUsernameMap] = useState({});
+
+useEffect(() => {
+  const map = {};
+  userSuggestions.forEach(u => {
+    map[u.id] = u.username;
+  });
+  setIdToUsernameMap(map);
+}, [userSuggestions]);
+
   useEffect(() => {
     setAssignedUsers(task.assignedUsers || []);
     fetch(`${apiUrl}/projects/${projectId}`, {
@@ -596,24 +623,39 @@ const TaskViewModal = ({ task, onClose }) => {
       .then((res) => res.json())
       .then((data) => {
         if (data.status === "success" && data.project.members.length > 0) {
-          console.log("DEBUG")
           Promise.all(
-            data.project.members.map(member =>
-              fetch(`${apiUrl}/users/${member._id}`, {
+            data.project.members.map(member => {
+              console.log("members:", data.project.members);
+              console.log("member:", member);
+              // Fix: _id kann ein Objekt sein (MongoDB Export)
+                const memberId = typeof member._id === "object" && member._id.$oid
+                ? member._id.$oid
+                : member._id || member.id;
+              console.log("memberId:", memberId);
+              return fetch(`${apiUrl}/users/${memberId}`, {
                 method: "GET",
                 headers: {
                   "Content-Type": "application/json",
                   "Authorization": localStorage.getItem("token"),
                 },
-              }).then(res => res.json())
-            )
+              }).then(res => res.json());
+            })
           )
-          .then(usersData => {
-            console.log(usersData)
+          .then(usersData =>{
+            console.log("usersData:", usersData);
             setUsers(usersData.map(userData => ({
               value: userData.user._id,
               label: `${userData.user.firstname} ${userData.user.lastname} (${userData.user.username})`
             })));
+            setUserSuggestions(
+              usersData.map(u => ({
+                id: u.user._id,           // bleibt für die interne Referenz
+                display: u.user.username, // wird im Text nach Auswahl verwendet
+                firstname: u.user.firstname,
+                lastname: u.user.lastname,
+                username: u.user.username
+              }))
+            );
           });
         }
       })
@@ -668,8 +710,11 @@ const TaskViewModal = ({ task, onClose }) => {
       if (!project || !project.members) return;
       try {
         const memberDetails = await Promise.all(
-          project.members.map(async (memberId) => {
-            const response = await fetch(`${apiUrl}/user/${memberId}`, {
+          project.members.map(async (member) => {
+            const memberId = typeof member._id === "object" && member._id.$oid
+            ? member._id.$oid
+            : member._id || member.id;
+            const response = await fetch(`${apiUrl}/users/${memberId}`, {
               method: "GET",
               headers: {
                 "Content-Type": "application/json",
@@ -679,7 +724,17 @@ const TaskViewModal = ({ task, onClose }) => {
             return response.json();
           })
         );
-        setAssignedUsers(memberDetails.map(user => ({ value: { "$oid": user._id }, label: `${user.firstname} ${user.lastname} (${user.username})` })));
+        console.log("memberDetails:", JSON.stringify(memberDetails.map(user => user.user), null, 2));
+        setAssignedUsers(
+          memberDetails
+            .map(u => ({
+              value:
+                  typeof u.user._id === "object" && u.user._id.$oid
+                    ? u.user._id.$oid
+                    : u.user._id || u.user.id,
+                label: `${u.user.firstname || ""} ${u.user.lastname || ""} (${u.user.username || u.user.email || (typeof u.user._id === "object" && u.user._id.$oid) || u.user._id || u.user.id})`
+              }))
+            );
       } catch (error) {
         console.error("Fehler beim Laden der Mitgliederdetails", error);
       }
@@ -862,7 +917,11 @@ const TaskViewModal = ({ task, onClose }) => {
           </span>
         </div>
         <div className="entry-header-content">
-          <div className="entry-title">{entry.commentText}</div>
+          <div className="entry-title" style={{fontWeight: "normal"}}>
+            <ReactMarkdown components={markdownComponents}>
+              {(entry.commentText || "").replace(/\n/g, "  \n")}
+            </ReactMarkdown>
+          </div>
           <div className="entry-user">{entry.createdByFirstname} {entry.createdByLastname} <span className="entry-username">({entry.createdByUsername})</span></div>
           <div className="entry-date">{new Date(entry.createdAt).toLocaleString()}</div>
         </div>
@@ -925,6 +984,61 @@ const TaskViewModal = ({ task, onClose }) => {
       );
     }
     return null;
+  };
+
+
+  // Mapping username -> {firstname, lastname, username}
+  const usernameMap = useMemo(() => {
+    const map = {};
+    userSuggestions.forEach(u => {
+      map[u.username] = u;
+    });
+    return map;
+  }, [userSuggestions]);
+
+  // Hilfsfunktion: Erwähnungen ersetzen
+  function renderMentions(text) {
+    return text.split(/(@[a-zA-Z0-9_.-]+)/g).map((part, i) => {
+      if (part.startsWith("@")) {
+        const username = part.slice(1);
+        const user = usernameMap[username];
+        if (user) {
+          return (
+            <Link
+              key={user._id}
+              to={`/user/${user.username}`}
+              className="mention-badge"
+              style={{ textDecoration: "none", color: "inherit", cursor: "pointer" }}
+            >
+              {user.firstname} {user.lastname} ({user.username})
+            </Link>
+          );
+        }
+      }
+      return part;
+    });
+  }
+
+  // Markdown-Komponenten für angepasste Schriftgrößen und Erwähnungen
+  const markdownComponents = {
+    h1: ({node, ...props}) => <h1 style={{fontSize: "1.5em", margin: "0.5em 0"}} {...props} />,
+    h2: ({node, ...props}) => <h2 style={{fontSize: "1.3em", margin: "0.5em 0"}} {...props} />,
+    h3: ({node, ...props}) => <h3 style={{fontSize: "1.1em", margin: "0.5em 0"}} {...props} />,
+    h4: ({node, ...props}) => <h4 style={{fontSize: "1em", margin: "0.5em 0"}} {...props} />,
+    h5: ({node, ...props}) => <h5 style={{fontSize: "0.95em", margin: "0.5em 0"}} {...props} />,
+    h6: ({node, ...props}) => <h6 style={{fontSize: "0.9em", margin: "0.5em 0"}} {...props} />,
+    p: ({node, ...props}) => (
+      <p style={{margin: "0.3em 0"}}>
+        {typeof props.children === "string"
+          ? renderMentions(props.children)
+          : React.Children.map(props.children, child =>
+              typeof child === "string" ? renderMentions(child) : child
+            )
+        }
+      </p>
+    ),
+    li: ({node, ...props}) => <li style={{margin: "0.2em 0"}} {...props} />,
+    code: ({node, ...props}) => <code style={{background: "#222", color: "#fff", padding: "2px 4px", borderRadius: "3px"}} {...props} />,
   };
 
   return (
@@ -1023,15 +1137,41 @@ const TaskViewModal = ({ task, onClose }) => {
             <div className="modal-column">
               <label>{t("description")}:</label>
               {editMode ? (
-                <textarea
-                  className="modal-input"
-                  value={description}
-                  onChange={(e) => setDescription(e.target.value)}
-                  onBlur={() => updateTask("description", description)}
-                  rows={4}
-                />
+                userSuggestions.length > 0 ? (
+                  <MentionsInput
+                    value={description || ""}
+                    onChange={(e) => setDescription(e.target.value)}
+                    placeholder={t("description")}
+                    className="mentions__input"
+                  >
+                    <Mention
+                      trigger="@"
+                      data={userSuggestions}
+                      markup="@__display__" // intern wird die DB-ID gespeichert
+                      appendSpaceOnAdd={true}
+                      displayTransform={(id, display) => `@${display}`} // ← display = username!
+                      renderSuggestion={(entry, search, highlightedDisplay, index, focused) => (
+                        <div className={`mentions__input__suggestions__item${focused ? " mentions__input__suggestions__item--focused" : ""}`}>
+                          {entry.firstname} {entry.lastname} <span style={{ color: "#888" }}>({entry.username})</span>
+                        </div>
+                      )}
+                    />
+                  </MentionsInput>
+                ) : (
+                  <textarea
+                    className="modal-input"
+                    value={description}
+                    onChange={(e) => setDescription(e.target.value)}
+                    placeholder={t("description")}
+                    style={{ minHeight: 60, width: "100%" }}
+                  />
+                )
               ) : (
-                <p style={{ whiteSpace: "pre-line" }}>{description}</p>
+                <div style={{fontWeight: "normal"}}>
+                  <ReactMarkdown components={markdownComponents}>
+                    {(description || "").replace(/\n/g, "  \n")}
+                  </ReactMarkdown>
+                </div>
               )}
             </div>
           </div>
@@ -1092,14 +1232,17 @@ const TaskViewModal = ({ task, onClose }) => {
               <label>{t("assigned_users")}:</label>
                 <Select
                   isMulti
-                  options={users}
+                  options={users.map(user => ({
+                    value: user.value || user._id,
+                    label: user.label || `${user.firstname} ${user.lastname} (${user.username})`
+                  }))}
                   value={assignedUsers.map(user => ({
                     value: user._id || user.value,
                     label: user.label || `${user.firstname} ${user.lastname} (${user.username})`
                   }))}
                   onChange={updateTaskMembers}
                   placeholder={t("choose_assigned_users")}
-                  isDisabled={true}
+                  isDisabled={!editMode}
                 />
 
             </div>
@@ -1164,30 +1307,52 @@ const TaskViewModal = ({ task, onClose }) => {
           {/* Kommentar hinzufügen bleibt wie gehabt */}
           <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 10 }}>
             <div className="add-comment-row">
-              <textarea
-                className="modal-input"
-                value={newComment}
-                onChange={(e) => setNewComment(e.target.value)}
-                placeholder={t("add_comment")}
-                rows={2}
-              />
-              <div style={{display: "flex", gap: "10px", justifyContent: "space-between", alignItems: "space-between"}}>
-                <button className="button-violet" onClick={handleAddComment}>
-                  {t("add_comment")}
-                </button>
-                <button
-                  className="button-small"
-                  onClick={() => setCommentSortOrder(order => order === "desc" ? "asc" : "desc")}
-                  style={{ minWidth: 120 }}
+              {userSuggestions.length > 0 ? (
+                  <MentionsInput
+                    value={newComment || ""}
+                    onChange={(event, newValue) => setNewComment(newValue)}
+                    className="mentions__input"
+                    placeholder={t("add_comment")}
                   >
-                  {commentSortOrder === "desc"
-                    ? t("sort_oldest_first") || "Älteste zuerst"
-                    : t("sort_newest_first") || "Neueste zuerst"}
-                </button>
-              </div>
-            </div>
-          </div>
-          {/* Einträge je nach Tab */}
+                    <Mention
+                      trigger="@"
+                      data={userSuggestions}
+                      markup="@__display__" // intern wird die DB-ID gespeichert
+                      appendSpaceOnAdd={true}
+                      displayTransform={(id, display) => `@${display}`} // ← display = username!
+                      renderSuggestion={(entry, search, highlightedDisplay, index, focused) => (
+                      <div className={`mentions__input__suggestions__item${focused ? " mentions__input__suggestions__item--focused" : ""}`}>
+                        {entry.firstname} {entry.lastname} <span style={{ color: "#888" }}>({entry.username})</span>
+                      </div>
+                      )}
+                    />
+                  </MentionsInput>
+                    ) : (
+                    <textarea
+                      className="modal-input"
+                      value={newComment}
+                      onChange={(e) => setNewComment(e.target.value)}
+                      placeholder={t("add_comment")}
+                      style={{ minHeight: 60, width: "100%" }}
+                    />
+                    )}
+                    <div style={{display: "flex", gap: "10px", justifyContent: "space-between", alignItems: "space-between"}}>
+                    <button className="button-violet" onClick={handleAddComment}>
+                      {t("add_comment")}
+                    </button>
+                    <button
+                      className="button-small"
+                      onClick={() => setCommentSortOrder(order => order === "desc" ? "asc" : "desc")}
+                      style={{ minWidth: 120 }}
+                      >
+                      {commentSortOrder === "desc"
+                      ? t("sort_oldest_first") || "Älteste zuerst"
+                      : t("sort_newest_first") || "Neueste zuerst"}
+                    </button>
+                    </div>
+                  </div>
+                  </div>
+                  {/* Einträge je nach Tab */}
           {commentTab === "all" && (
             <ul className="comment-list">
               {mergedEntries.length === 0 ? (

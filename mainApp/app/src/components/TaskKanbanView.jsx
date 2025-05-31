@@ -10,11 +10,20 @@ import spongebob from '../functions/spongebob.js'
 const apiUrl = import.meta.env.VITE_APP_API_URL || "http://localhost:3001";
 
 const TaskKanbanView = ({ tasks, onTaskClick }) => {
+  // groupedTasks ist initial tasks, daher:
+  const initialGrouped = tasks.reduce((acc, task) => {
+    acc[task.status] = acc[task.status] || [];
+    acc[task.status].push(task);
+    return acc;
+  }, {});
+  const initialHasNewTasks = initialGrouped["new"] && initialGrouped["new"].length > 0;
+
   const [statuses, setStatuses] = useState([]);
   const [priorities, setPriorities] = useState([]);
   const [taskList, setTaskList] = useState(tasks);
-  const [groupedTasks, setGroupedTasks] = useState(tasks);
+  const [groupedTasks, setGroupedTasks] = useState(initialGrouped);
   const [showConfetti, setShowConfetti] = useState(false);
+  const [showNewColumn, setShowNewColumn] = useState(initialHasNewTasks);
   const { t, i18n } = useTranslation();
 
   const startFirework = () => {
@@ -58,13 +67,9 @@ const TaskKanbanView = ({ tasks, onTaskClick }) => {
       setGroupedTasks(grouped);
     }, [taskList]);
 
+    // Synchronisiere taskList mit tasks, wenn sich tasks ändern
     useEffect(() => {
-      const grouped = tasks.reduce((acc, task) => {
-        acc[task.status] = acc[task.status] || [];
-        acc[task.status].push(task);
-        return acc;
-      }, {});
-      setGroupedTasks(grouped);
+      setTaskList(tasks);
     }, [tasks]);
 
     const getGroupedTasks = async() => {
@@ -185,58 +190,101 @@ const TaskKanbanView = ({ tasks, onTaskClick }) => {
     }
   };
 
+  // Prüfen, ob es Tasks mit Status "new" gibt
+  const hasNewTasks = groupedTasks["new"] && groupedTasks["new"].length > 0;
+
+  useEffect(() => {
+    if (hasNewTasks) setShowNewColumn(true);
+  }, [hasNewTasks]);
+
   return (
-    <div className="task-kanban-container" style={{ display: "flex", gap: "10px" }}>
-    {showConfetti && <Confetti mode="boom" colors={["#ff0000","#00ff00", "#0000ff"]} width={window.innerWidth} height={window.innerHeight} />}
+    <div>
+      {/* Toggle-Button immer zeigen, solange keine "new"-Tasks existieren */}
+      {!hasNewTasks && (
+        <div style={{ marginBottom: 12 }}>
+          <button onClick={() => setShowNewColumn((v) => !v)}>
+            {showNewColumn
+              ? (t("hide_new_column") || "Hide 'New' column")
+              : (t("show_new_column") || "Show 'New' column")}
+          </button>
+        </div>
+      )}
+      <div className="task-kanban-container" style={{ display: "flex", gap: "10px" }}>
+        {showConfetti && <Confetti mode="boom" colors={["#ff0000","#00ff00", "#0000ff"]} width={window.innerWidth} height={window.innerHeight} />}
 
-      <div
-        key="new"
-        className="task-kanban-column"
-        style={{ 
-          borderTop: `5px solid #000000`, 
-          flex: 1, 
-          padding: "10px", 
-          minHeight: "300px" 
-        }}
-        onDragOver={(e) => e.preventDefault()}
-        onDrop={(e) => handleDrop(e, "new", false)}
-      >
-        <h3 className="kanban-header">{t("new")}</h3>
-        {groupedTasks["new"] ? (groupedTasks["new"]).map((item, index) => ({ index, value: item })).sort((a, b) => (a.value.kanbanIndexVertical || a.index) - (b.value.kanbanIndexVertical || b.index)).map((task) => {
-          const priority = getPriorityInfo(task.value.priority);
-          return (
-            <div
-              key={task.value._id}
-              className={task.value.isSubTask ? "subtask-kanban-item" : "task-kanban-item"}
-              draggable
-              onDragStart={(e) => handleDragStart(e, task.value)}
-              onDragOver={(e) => e.preventDefault()}
-              onDrop={(e) => handleVerticalDrop(e, task.value)}
-              onClick={() => onTaskClick(task.value)}
-              style={{
-                borderLeft: `5px solid ${priority?.color || "#ddd"}`,
-              }}
-            >
-
-              <div className="task-kanban-details">
-                <span>{task.value.isSubTask ? "#" + task.value.parentTaskTicketNumber : ""}</span>
-                <strong>{task.value.isSubTask ? "↳" : ""}{task.value.title}</strong>
-                <div>{task.value.description || t("no_description")}</div>
-  
-                <hr style={{width: "100%", color: "grey", margin: "0px"}}/>
-
-                <span>{t("created_at")}: {new Date(task.value.createdAt).toLocaleDateString()}</span>
-                <span>{t("last_changed")}: {new Date(task.value.updatedAt).toLocaleDateString()}</span>
-
-                <hr style={{width: "100%", color: "grey", margin: "0px"}}/>
-                
-                <span>#{task.value.ticketNumber}</span>
-              </div>
+        {/* "New"-Spalte nur anzeigen, wenn sichtbar oder Tasks vorhanden */}
+        {(showNewColumn || hasNewTasks) && (
+          <div
+            key="new"
+            className="task-kanban-column"
+            style={{
+              borderTop: `5px solid #000000`,
+              flex: 1,
+              padding: "10px",
+              minHeight: "300px"
+            }}
+            onDragOver={(e) => e.preventDefault()}
+            onDrop={(e) => handleDrop(e, "new", false)}
+          >
+            <div style={{display: "flex", justifyContent: "space-between", alignItems: "center"}}>
+              <h3 className="kanban-header">{t("new")}</h3>
             </div>
-          );
-        }) : null }
-      </div>
-{        sortedStatuses.map(([statusKey, status]) => (
+            {hasNewTasks ? (groupedTasks["new"]).map((item, index) => ({ index, value: item }))
+              .sort((a, b) => (a.value.kanbanIndexVertical || a.index) - (b.value.kanbanIndexVertical || b.index))
+              .map((task) => {
+                const priority = getPriorityInfo(task.value.priority);
+                return (
+                  <div
+                    key={task.value._id}
+                    className={task.value.isSubTask ? "subtask-kanban-item" : "task-kanban-item"}
+                    draggable
+                    onDragStart={(e) => handleDragStart(e, task.value)}
+                    onDragOver={(e) => e.preventDefault()}
+                    onDrop={(e) => handleVerticalDrop(e, task.value)}
+                    onClick={() => onTaskClick(task.value)}
+                    style={{
+                      borderLeft: `5px solid ${priority?.color || "#ddd"}`,
+                    }}
+                    title={
+                      `${task.value.title}\n` +
+                      (task.value.description ? `${task.value.description}\n` : "") +
+                      `${t("created_at")}: ${new Date(task.value.createdAt).toLocaleDateString()}\n` +
+                      `${t("last_changed")}: ${new Date(task.value.updatedAt).toLocaleDateString()}`
+                    }
+                  >
+                    <div className="task-kanban-details" style={{gap: 2}}>
+                      <div style={{display: "flex", alignItems: "center", justifyContent: "space-between"}}>
+                        <strong style={{fontSize: "1.05em", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: "70%"}}>
+                          {task.value.isSubTask ? "↳" : ""}{task.value.title}
+                        </strong>
+                        <span style={{fontSize: "0.95em", color: "#888"}}>#{task.value.ticketNumber}</span>
+                      </div>
+                      <div className="task-kanban-description" style={{
+                        fontSize: "0.95em",
+                        color: "#666",
+                        whiteSpace: "nowrap",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        maxWidth: "100%",
+                        marginBottom: 2
+                      }}>
+                        {task.value.description}
+                      </div>
+                      <div style={{display: "flex", alignItems: "center", gap: 6, marginTop: 2}}>
+                        <span className="priority-label" style={{
+                          background: priority.color, color: "#fff", borderRadius: 3, padding: "2px 6px", fontSize: "0.85em"
+                        }}>{priority.name}</span>
+                        <span style={{fontSize: "0.85em", color: "#aaa"}} title={t("created_at")}>
+                          {new Date(task.value.createdAt).toLocaleDateString()}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                );
+              }) : null}
+          </div>
+        )}
+        {sortedStatuses.map(([statusKey, status]) => (
           <div
             key={status.name}
             className="task-kanban-column"
@@ -262,28 +310,47 @@ const TaskKanbanView = ({ tasks, onTaskClick }) => {
                     style={{
                       borderLeft: `5px solid ${priority?.color || "#ddd"}`,
                     }}
+                    title={
+                      `${task.value.title}\n` +
+                      (task.value.description ? `${task.value.description}\n` : "") +
+                      `${t("created_at")}: ${new Date(task.value.createdAt).toLocaleDateString()}\n` +
+                      `${t("last_changed")}: ${new Date(task.value.updatedAt).toLocaleDateString()}`
+                    }
                   >
-                    <div className="task-kanban-details">
-                      <span>{task.value.isSubTask ? `#${task.value.parentTaskTicketNumber}` : ""}</span>
-                      <strong>{task.value.isSubTask ? "↳" : ""}{task.value.title}</strong>
-                      <div>{task.value.description || t("no_description")}</div>
-                      
-                      <hr style={{ width: "100%", color: "grey", margin: "0px" }} />
-                      
-                      <span>{t("created_at")}: {new Date(task.value.createdAt).toLocaleDateString()}</span>
-                      <span>{t("last_changed")}: {new Date(task.value.updatedAt).toLocaleDateString()}</span>
-                      
-                      <hr style={{ width: "100%", color: "grey", margin: "0px" }} />
-                      
-                      <span>#{task.value.ticketNumber}</span>
+                    <div className="task-kanban-details" style={{gap: 2}}>
+                      <div style={{display: "flex", alignItems: "center", justifyContent: "space-between"}}>
+                        <strong style={{fontSize: "1.05em", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: "70%"}}>
+                          {task.value.isSubTask ? "↳" : ""}{task.value.title}
+                        </strong>
+                        <span style={{fontSize: "0.95em", color: "#888"}}>#{task.value.ticketNumber}</span>
+                      </div>
+                      <div className="task-kanban-description" style={{
+                        fontSize: "0.95em",
+                        color: "#666",
+                        whiteSpace: "nowrap",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        maxWidth: "100%",
+                        marginBottom: 2
+                      }}>
+                        {task.value.description}
+                      </div>
+                      <div style={{display: "flex", alignItems: "center", gap: 6, marginTop: 2}}>
+                        <span className="priority-label" style={{
+                          background: priority.color, color: "#fff", borderRadius: 3, padding: "2px 6px", fontSize: "0.85em"
+                        }}>{priority.name}</span>
+                        <span style={{fontSize: "0.85em", color: "#aaa"}} title={t("created_at")}>
+                          {new Date(task.value.createdAt).toLocaleDateString()}
+                        </span>
+                      </div>
                     </div>
                   </div>
                 );
               })}
           </div>
         ))}
-
-  </div>
+      </div>
+    </div>
   );
 };
 

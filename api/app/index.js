@@ -217,20 +217,16 @@ try {
 
                 const conn = mongoose.connection;
                 
-                conn.once('open', () => {
+                conn.once('open', async () => {
                     logMessage("info", '✅ MongoDB erfolgreich verbunden!');
-                    
-                    // GridFSBucket initialisieren
-                    gfsBucket = new GridFSBucket(conn.db, { bucketName: 'uploads' });
+                    gfsBucket = await new GridFSBucket(conn.db, { bucketName: 'uploads' });
                     logMessage("info", '📂 GridFSBucket initialisiert!');
-
-
-
                     logMessage("info", '🚀 Multer-Upload bereit!');
-                    
-                    // Action Logger nur initialisieren wenn eine DB Connection besteht
-                    app.use(actionLogger)
-                
+                    await app.use(actionLogger);
+
+                    // Nach dem Start: Fixe inkorrekte __v-Felder
+                    await fixInvalidVersionFields();
+                    await fixUserIdsWithOid();
                 });
                 
                 conn.on('error', (err) => {
@@ -301,6 +297,60 @@ const hashPassword = async (password) => {
     const hashArray = Array.from(new Uint8Array(hashBuffer));
     return hashArray.map(byte => byte.toString(16).padStart(2, "0")).join("");
 };
+
+async function fixInvalidVersionFields() {
+    try {
+        logMessage("info", 'Checking for invalid __v fields in collections...');
+        const collections = await mongoose.connection.db.listCollections().toArray();
+        for (const col of collections) {
+            const collection = mongoose.connection.db.collection(col.name);
+            // Finde alle Dokumente, bei denen __v ein ObjectId ist
+            const docs = await collection.find({ __v: { $type: 'objectId' } }).toArray();
+            if (docs.length > 0) {
+                logMessage("warning", 'Found Problems with __v field in Collection: ' + col.name);
+                logMessage("warning", `Trying to fix __v fields in Collection '${col.name}'...`);
+                for (const doc of docs) {
+                    await collection.updateOne(
+                        { _id: doc._id },
+                        { $set: { __v: 0 } } // Setze __v auf 0 (oder ggf. auf einen anderen Standardwert)
+                    );
+                }
+                logMessage("warn", `Gefixte __v-Felder in Collection '${col.name}': ${docs.length}`);
+            } else {
+                logMessage("success", `Keine Probleme mit __v-Feldern in Collection '${col.name}' gefunden.`);
+            }
+        }
+    } catch (err) {
+        logMessage("error", "Fehler beim Fixen der __v-Felder: " + err.message);
+    }
+}
+
+async function fixUserIdsWithOid() {
+    try {
+        logMessage("info", 'Checking for broken User IDs...');
+        const collection = mongoose.connection.db.collection('User');
+        // Finde alle User, deren _id ein Objekt mit $oid ist
+        const brokenUsers = await collection.find({ "_id.$oid": { $exists: true } }).toArray();
+        if (brokenUsers.length === 0) {
+            logMessage("success", "Keine User mit kaputtem _id-Feld gefunden.");
+            return;
+        }
+        logMessage("warning", `Fixing ${brokenUsers.length} User mit kaputtem _id-Feld...`);
+        for (const user of brokenUsers) {
+            const newId = new ObjectId(user._id.$oid);
+            // Prüfe, ob ein User mit dieser ID schon existiert (um Duplikate zu vermeiden)
+            const exists = await collection.findOne({ _id: newId });
+            if (!exists) {
+                user._id = newId;
+                await collection.insertOne(user);
+            }
+            await collection.deleteOne({ _id: user._id });
+        }
+        logMessage("success", "Alle kaputten User-IDs wurden repariert.");
+    } catch (err) {
+        logMessage("error", "Fehler beim Fixen der User-IDs: " + err.message);
+    }
+}
 
 app.post('/install', async (req, res) => {
     logMessage('info', 'Installationsprozess gestartet...');
@@ -858,6 +908,20 @@ app.delete('/user/:id', async (req, res) => {
     }
 });
 
+// Benutzer anhand des Usernames abrufen
+app.get('/users/by-username/:username', async (req, res) => {
+    try {
+        const user = await User.findOne({ username: req.params.username }, '-password -isLDAPUser -twoFactorActivated -twoFactorSecret -groups -uuid -language -invited -inviteToken -inviteExpires');
+        if (!user) {
+            return res.status(404).json({ status: 'error', message: 'Benutzer nicht gefunden' });
+        }
+        res.json({ status: 'success', user });
+    } catch (error) {
+        res.status(500).json({ status: 'error', message: 'Fehler beim Abrufen des Benutzers', error: error.message });
+    }
+});
+
+
 // **LDAP-Authentifizierung**
 function authenticateLDAP(email, password, callback) {
     const client = ldap.createClient({ url: process.env.LDAP_URL || 'ldap://ldap.example.com' });
@@ -1234,32 +1298,32 @@ app.put('/projects/:id', async (req, res) => {
         }
         const user = await User.findById(tokenRecord.userId);
 
-        const task = await Task.findById(req.params.id);
-        if (!task) {
-            return res.status(404).json({ status: 'error', message: req.t('task_not_found') });
+        const project = await Project.findById(req.params.id);
+        if (!project) {
+            return res.status(404).json({ status: 'error', message: req.t('project_not_found') });
         }
 
         // Zugriffsprüfung
-        if (!(await hasProjectAccess(user, task.project))) {
+        if (!(await hasProjectAccess(user, project._id))) {
             return res.status(403).json({ status: 'error', message: req.t('not_allowed') });
         }
 
         const { title, description, deadline, members, isServiceDesk, status, isDone } = req.body;
-        if (title) task.title = title;
-        if (description) task.description = description;
-        if (deadline) task.deadline = deadline;
+        if (title) project.title = title;
+        if (description) project.description = description;
+        if (deadline) project.deadline = deadline;
         if (members) {
             const users = await User.find({ _id: { $in: members } });
             if (users.length !== members.length) {
                 return res.status(400).json({ status: 'error', message: req.t('one_or_more_users_not_exist') });
             }
-            task.members = members;
+            project.members = members;
         }
-        task.isServiceDesk = isServiceDesk;
-        task.status = status;
-        task.isDone = isDone;
-        await task.save();
-        res.json({ status: 'success', message: 'Projekt aktualisiert', task });
+        if (typeof isServiceDesk !== "undefined") project.isServiceDesk = isServiceDesk;
+        if (typeof status !== "undefined") project.status = status;
+        if (typeof isDone !== "undefined") project.isDone = isDone;
+        await project.save();
+        res.json({ status: 'success', message: 'Projekt aktualisiert', project });
     } catch (error) {
         console.log(error)
         res.status(500).json({ status: 'error', message: req.t('error_updating_project'), error: error.message });
@@ -1433,20 +1497,39 @@ app.get("/projects/:projectId", async (req, res) => {
       // Hole User für Admin-Check
       const user = await User.findById(userId);
 
-      // Projekt inkl. Mitglieder und Ersteller laden
-      const project = await Project.findById(req.params.projectId).populate("members");
+      // Projekt inkl. Mitglieder und Ersteller laden (nur bestimmte Felder für members)
+      const project = await Project.findById(req.params.projectId)
+        .populate({
+          path: "members",
+          select: "username firstname lastname" 
+        });
       if (!project) {
         return res.status(404).json({ status: "error", message: "Projekt nicht gefunden." });
       }
 
       // Admin sieht alles
       if (user && user.isAdmin) {
-        return res.json({ status: "success", project });
+        // members auf gewünschte Felder reduzieren
+        const projectObj = project.toObject();
+        projectObj.members = projectObj.members.map(m => ({
+          id: m._id,
+          username: m.username,
+          firstname: m.firstname,
+          lastname: m.lastname
+        }));
+        return res.json({ status: "success", project: projectObj });
       }
 
       // Ersteller sieht immer alles
       if (project.creatorId && project.creatorId.toString() === userId) {
-        return res.json({ status: "success", project });
+        const projectObj = project.toObject();
+        projectObj.members = projectObj.members.map(m => ({
+          id: m._id,
+          username: m.username,
+          firstname: m.firstname,
+          lastname: m.lastname
+        }));
+        return res.json({ status: "success", project: projectObj });
       }
 
       // Prüfen, ob der User Mitglied ist
@@ -1455,7 +1538,15 @@ app.get("/projects/:projectId", async (req, res) => {
         return res.status(403).json({ status: "error", message: "Kein Zugriff auf dieses Projekt." });
       }
 
-      res.json({ status: "success", project });
+      const projectObj = project.toObject();
+      projectObj.members = projectObj.members.map(m => ({
+        id: m._id,
+        username: m.username,
+        firstname: m.firstname,
+        lastname: m.lastname
+      }));
+
+      res.json({ status: "success", project: projectObj });
     } catch (error) {
       res.status(500).json({ status: "error", message: "Fehler beim Abrufen des Projekts." });
     }
@@ -1785,7 +1876,7 @@ app.get('/attachments/:fileId', async (req, res) => {
         if (!att) return res.status(404).json({ status: 'error', message: 'file_not_found' });
 
         res.download(att.path, att.filename);
-    } catch (error) {
+    } catch ( error) {
         res.status(500).json({ status: 'error', message: 'error_get_file', error: error.message });
     }
 });
@@ -2200,12 +2291,18 @@ const convertObjectIds = (obj) => {
     if (obj && typeof obj === 'object') {
         for (let key in obj) {
             if (obj.hasOwnProperty(key)) {
-                if (Array.isArray(obj[key])) {
-                    obj[key] = obj[key].map(item => convertObjectIds(item));  // Rekursiv bei Arrays
-                } else if (ObjectId.isValid(obj[key])) {
-                    obj[key] = new ObjectId(obj[key]);  // Umwandlung zu ObjectId
+                // Erkenne MongoDB-Export-Format {"$oid": "..."}
+                if (
+                    obj[key] &&
+                    typeof obj[key] === 'object' &&
+                    obj[key].$oid &&
+                    typeof obj[key].$oid === 'string'
+                ) {
+                    obj[key] = new ObjectId(obj[key].$oid);
+                } else if (Array.isArray(obj[key])) {
+                    obj[key] = obj[key].map(item => convertObjectIds(item));
                 } else if (typeof obj[key] === 'object') {
-                    obj[key] = convertObjectIds(obj[key]);  // Rekursiv bei verschachtelten Objekten
+                    obj[key] = convertObjectIds(obj[key]);
                 }
             }
         }
@@ -2242,17 +2339,17 @@ app.post('/backup/restore/:fileName', async (req, res) => {
                 for (const [collectionName, documents] of Object.entries(backupData)) {
                     if (documents.length > 0) {
                         const collection = db.collection(collectionName);
-
-                        // Alle Dokumente werden durch die Funktion `convertObjectIds` überprüft und umgewandelt
                         const transformedDocs = documents.map(doc => convertObjectIds(doc));
-
-                        // Leere Sammlung und Dokumente einfügen
                         await collection.deleteMany({});
                         await collection.insertMany(transformedDocs);
                     }
                 }
 
                 await client.close();
+
+                // Nach dem Restore: __v-Felder fixen
+                await fixInvalidVersionFields();
+
                 res.json({ status: "success", message: req.t('backup_restored') });
             } catch (err) {
                 res.status(500).json({ status: "error", message: req.t('error_restoring_backup'), error: err.message });

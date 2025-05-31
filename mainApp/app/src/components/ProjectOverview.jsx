@@ -76,32 +76,27 @@ const ProjectOverview = ({
     setErrorMessage && setErrorMessage("");
   };
 
-  const handleSave = async () => {
-    if (!editProject.title || editProject.title.trim() === "") {
-      setErrorMessage && setErrorMessage(t("error_title_required"));
-      return;
-    }
-    if (!editProject.description || editProject.description.trim() === "") {
-      setErrorMessage && setErrorMessage(t("error_description_required"));
-      return;
-    }
-    // Status
-    let selectedStatus = projectStatuses.find((status) => status.label === editProject.status);
-    if (!selectedStatus && projectStatuses.length > 0) {
-      selectedStatus = projectStatuses[0];
-    }
-    let statusValue = selectedStatus ? selectedStatus.label : "offen";
-    const projectIsDone = selectedStatus?.isDone || false;
+  const handleSave = () => {
+    // selectedMembers ist ein Array von { value, label }
+    const memberIds = Array.isArray(selectedMembers)
+    console.log("selectedMembers")
+    console.log(selectedMembers)
+      ? selectedMembers.map(m => m.value).filter(Boolean)
+      : [];
 
-    // Callback an Parent
-    await onProjectUpdate({
-      ...editProject,
-      members: selectedMembers.map((m) => m.value),
-      status: statusValue,
-      isDone: projectIsDone,
+    fetch(`/projects/${project._id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', Authorization: token },
+      body: JSON.stringify({
+        ...editProject,
+        members: memberIds
+      })
+    }).then(() => {
+      setIsEditing(false);
+      // Optional: onProjectUpdate() oder ähnliches aufrufen
     });
-    setIsEditing(false);
   };
+
 
   if (!project) return null;
 

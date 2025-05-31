@@ -73,7 +73,7 @@ const TaskListView = ({ tasks, onTaskClick }) => {
       </button>
       <ul className="task-list">
         {filteredTasks.length === 0 ? (
-          <p className="task-description">{t("no_tasks_available")}</p>
+          <li className="task-list-empty">{t("no_tasks_available")}</li>
         ) : (
           filteredTasks.filter((task) => !task.isSubTask).map((task) => {
             const status = getStatusInfo(task.status);
@@ -90,65 +90,60 @@ const TaskListView = ({ tasks, onTaskClick }) => {
                   <div className="task-details" onClick={() => onTaskClick(task)}>
                     <span className="task-title">{task.title}</span>
                     <span className="task-description">{task.description || t("no_description")}</span>
-                    <span className="task-date">{t("created_at")}: {new Date(task.createdAt).toLocaleDateString()}</span>
-                    <span className="task-date">{t("last_changed")}: {new Date(task.updatedAt).toLocaleDateString()}</span>
-                    <span className="task-ticket-number">#{task.ticketNumber}</span>
+                    <div className="task-dates">
+                      <span className="task-date">{t("created_at")}: {new Date(task.createdAt).toLocaleDateString()}</span>
+                      <span className="task-date">{t("last_changed")}: {new Date(task.updatedAt).toLocaleDateString()}</span>
+                    </div>
                   </div>
-                  <div className="task-meta">
-                    <span
-                      className="task-status"
-                      style={{ backgroundColor: status.color, color: "#1a1a1a" }}
-                    >
-                      {status.name}
-                    </span>
-                  </div>
-                  <div>
+                  <div className="task-meta-row">
+                    <div className="task-meta">
+                      <span className="task-badge task-status" style={{ backgroundColor: status.color }}>{status.name}</span>
+                      <span className="task-badge task-ticket-number">#{task.ticketNumber}</span>
+                    </div>
                     {hasSubtasks && (
-                      <button onClick={() => toggleSubtasks(task._id)}>
-                        {expandedTasks[task.id] ? t("hide_subtasks") : t("show_subtasks")}
+                      <button className="show-subtasks-btn" onClick={() => toggleSubtasks(task._id)}>
+                        {expandedTasks[task._id] ? "−" : "+"}
                       </button>
                     )}
                   </div>
                 </div>
-                {expandedTasks[task._id] && hasSubtasks && (() => {
-                  return (
-                    <div className="subtask-container">
-                      <ul
-                        className="subtask-list"
-                      >
-                        {tasks.filter(t => task.subtaskIds.some(sub => sub._id === t._id)).map((subtask) => {
-                          const subtaskStatus = getStatusInfo(subtask.status); // Falls Subtasks auch Status haben
-                          const subtaskPriority = getPriorityInfo(subtask.priority);
+                {expandedTasks[task._id] && hasSubtasks && (
+                  <div className="subtask-container">
+                    <ul className="subtask-list">
+                      {tasks.filter(t => task.subtaskIds.some(sub => sub._id === t._id)).map((subtask) => {
+                        const subtaskStatus = getStatusInfo(subtask.status);
+                        const subtaskPriority = getPriorityInfo(subtask.priority);
 
-                          return (
-                            <li 
-                              key={subtask.id} 
-                              className="subtask-item"
-                              style={{ borderLeft: `6px solid ${subtaskPriority.color || "#ddd"}` }}
-                              onClick={() => onTaskClick(subtask)}
-                            >
-                              <div className="subtask-details" >
-                                <span className="subtask-title">{subtask.title}</span>
-                                <span className="subtask-description">{subtask.description || t("no_description")}</span>
+                        return (
+                          <li 
+                            key={subtask.id} 
+                            className="subtask-item"
+                            style={{ borderLeft: `4px solid ${subtaskPriority.color || "#ddd"}` }}
+                            onClick={() => onTaskClick(subtask)}
+                          >
+                            <div className="subtask-details">
+                              <span className="subtask-title">{subtask.title}</span>
+                              <span className="subtask-description">{subtask.description || t("no_description")}</span>
+                              <div className="subtask-dates">
                                 <span className="subtask-date">{t("created_at")}: {new Date(subtask.createdAt).toLocaleDateString()}</span>
                                 <span className="subtask-date">{t("last_changed")}: {new Date(subtask.updatedAt).toLocaleDateString()}</span>
-                                <span className="task-ticket-number">#{subtask.ticketNumber}</span>
                               </div>
-                              <div className="subtask-meta">
-                                <span
-                                  className="subtask-status"
-                                  style={{ backgroundColor: subtaskStatus.color, color: "#1a1a1a" }}
-                                >
-                                  {subtaskStatus.name}
-                                </span>
-                              </div>
-                            </li>
-                          );
-                        })}
-                      </ul>
-                    </div>
-                    );
-                  })()}
+                              <span className="task-ticket-number">#{subtask.ticketNumber}</span>
+                            </div>
+                            <div className="subtask-meta">
+                              <span
+                                className="subtask-status"
+                                style={{ backgroundColor: subtaskStatus.color, color: "#1a1a1a" }}
+                              >
+                                {subtaskStatus.name}
+                              </span>
+                            </div>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  </div>
+                )}
               </li>
             );
           })
