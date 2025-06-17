@@ -46,7 +46,7 @@ const JWT_SECRET = process.env.JWT_SECRET || 'supergeheim';
 const appName = process.env.appName || "openTasks"
 const loginTokenDuration = process.env.LOGIN_TOKEN_DURATION || 99; // Beispiel: 1 Stunde (in Stunden), dies kann dynamisch gesetzt werden
 const BACKUP_DIR = path.join(__dirname, 'data/backups');
-const FRONTEND_URL = process.env.FRONTEND_URL || "http://localhost:5173"; // URL des Frontends, kann in der .env Datei gesetzt werden
+const FRONTEND_URL = process.env.VITE_APP_FRONTEND_URL || "http://localhost:5173"; // URL des Frontends, kann in der .env Datei gesetzt werden
 const i18next = require('i18next');
 const middleware = require('i18next-http-middleware');
 

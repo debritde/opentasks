@@ -11,6 +11,7 @@ services:
       - openTasks
     environment:
       - VITE_APP_API_URL=http://${domain}:3001
+      - VITE_APP_FRONTEND_URL=http://${domain}:5173
       - VITE_APP_UPDATER_URL=http://${domain}:3002
       - VITE_APP_DATABASE_TYPE=${VITE_APP_DATABASE_TYPE}
       - VITE_APP_DATABASE_HOST=${projectID}-opentasks-mongodb
@@ -135,6 +136,21 @@ services:
     depends_on:
       - mongodb
       
+  mailpit:
+    image: axllent/mailpit
+    container_name: ${projectID}-opentasks-mailpit
+    restart: unless-stopped
+    volumes:
+      - ./data/opentasks-mailpit/data:/data
+    ports:
+      - 8025:8025
+      - 1025:1025
+    environment:
+      MP_MAX_MESSAGES: 5000
+      MP_DATABASE: /data/mailpit.db
+      MP_SMTP_AUTH_ACCEPT_ANY: 1
+      MP_SMTP_AUTH_ALLOW_INSECURE: 1
+
 networks:
   openTasks:
     name: ${projectID}-openTasks

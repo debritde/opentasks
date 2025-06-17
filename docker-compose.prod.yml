@@ -12,6 +12,7 @@ services:
       - reverseproxy   
     environment:
       - VITE_APP_API_URL=https://api.${domain}
+      - VITE_APP_FRONTEND_URL=https://${domain}
       - VITE_APP_UPDATER_URL=https://updater.${domain}
       - VITE_APP_DATABASE_TYPE=${VITE_APP_DATABASE_TYPE}
       - VITE_APP_DATABASE_HOST=${projectID}-opentasks-mongodb
