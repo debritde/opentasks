@@ -9,7 +9,7 @@ import spongebob from '../functions/spongebob.js'
 
 const apiUrl = import.meta.env.VITE_APP_API_URL || "http://localhost:3001";
 
-const TaskKanbanView = ({ tasks, onTaskClick }) => {
+const TaskKanbanView = ({ tasks, onTaskClick, projectId }) => {
   // groupedTasks ist initial tasks, daher:
   const initialGrouped = tasks.reduce((acc, task) => {
     acc[task.status] = acc[task.status] || [];
@@ -24,6 +24,8 @@ const TaskKanbanView = ({ tasks, onTaskClick }) => {
   const [groupedTasks, setGroupedTasks] = useState(initialGrouped);
   const [showConfetti, setShowConfetti] = useState(false);
   const [showNewColumn, setShowNewColumn] = useState(initialHasNewTasks);
+  const [dragOverColumn, setDragOverColumn] = useState(null); // <--- HIER
+  const [dragSourceColumn, setDragSourceColumn] = useState(null);
   const { t, i18n } = useTranslation();
 
   const startFirework = () => {
@@ -84,6 +86,7 @@ const TaskKanbanView = ({ tasks, onTaskClick }) => {
   const handleDragStart = (e, task) => {
     e.dataTransfer.setData("task", JSON.stringify(task));
     e.dataTransfer.effectAllowed = "move";
+    setDragSourceColumn(task.status); // Merke die Quellspalte
   };
 
   const handleDrop = async (e, newStatus, isDone) => {
@@ -133,46 +136,73 @@ const TaskKanbanView = ({ tasks, onTaskClick }) => {
       });
 
   };
+  // Hilfsfunktion: Indizes in jeder Spalte reparieren
+const fixKanbanIndices = (tasks) => {
+  // Gruppiere nach Status
+  const grouped = {};
+  tasks.forEach(task => {
+    if (!grouped[task.status]) grouped[task.status] = [];
+    grouped[task.status].push(task);
+  });
+
+  // Sortiere und vergebe neue Indizes
+  let fixedTasks = [];
+  Object.values(grouped).forEach(taskArr => {
+    taskArr
+      .sort((a, b) => (a.kanbanIndexVertical ?? 0) - (b.kanbanIndexVertical ?? 0))
+      .forEach((task, idx) => {
+        fixedTasks.push({ ...task, kanbanIndexVertical: idx });
+      });
+  });
+  return fixedTasks;
+};
+
   const handleVerticalDrop = async (e, targetTask) => {
     e.preventDefault();
 
     const sourceTaskData = await e.dataTransfer.getData("task");
     if (!sourceTaskData) return;
-  
-    const sourceTask = await JSON.parse(sourceTaskData);
-  
-    // Tausch der Indizes
-    const sourceIndex = sourceTask.kanbanIndexVertical;
-    const targetIndex = targetTask.kanbanIndexVertical;
 
-    // Aktualisiere die lokalen Tasks
-    const updatedTasks = await taskList.map((task) => {
-      if (task._id === sourceTask._id) {
-        return { ...task, kanbanIndexVertical: targetIndex };
-      }
-      if (task._id === targetTask._id) {
-        return { ...task, kanbanIndexVertical: sourceIndex };
-      }
-      return task;
-    });
-  
-    setTaskList(updatedTasks);
-  
-    // API-Aufrufe parallel ausführen
+    const sourceTask = JSON.parse(sourceTaskData);
+
+    // Nur innerhalb gleicher Spalte swappen
+    if (sourceTask.status !== targetTask.status) {
+      // ...dein Code für Spaltenwechsel...
+      return;
+    }
+
+    // Hole alle Tasks der Spalte, sortiert nach Index (als Zahl!)
+    let colTasks = taskList
+      .filter(t => t.status === sourceTask.status)
+      .sort((a, b) => Number(a.kanbanIndexVertical ?? 0) - Number(b.kanbanIndexVertical ?? 0));
+
+    // Finde Positionen eindeutig per _id
+    const from = colTasks.findIndex(t => t._id === sourceTask._id);
+    const to = colTasks.findIndex(t => t._id === targetTask._id);
+
+    if (from === -1 || to === -1 || from === to) return;
+
+    // SWAP: Tausche die beiden Elemente
+    [colTasks[from], colTasks[to]] = [colTasks[to], colTasks[from]];
+
+    // Setze für alle Tasks der Spalte den Index auf die Array-Position
+    colTasks = colTasks.map((t, idx) => ({ ...t, kanbanIndexVertical: idx }));
+
+    // Update alle betroffenen Tasks im Backend
     const token = localStorage.getItem("token");
-    const updateSource = await fetch(`${apiUrl}/tasks/${sourceTask._id}`, {
-      method: "PUT",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": token,
-      },
-      body: JSON.stringify({ kanbanIndexVertical: targetIndex }),
-    });
-  
-  
-    await Promise.all([updateSource, updateTarget])
-      .then(() => console.log("Indizes erfolgreich getauscht."))
-      .catch((err) => console.error("Fehler beim Tausch der Indizes:", err));
+    await Promise.all(
+      colTasks.map(t =>
+        fetch(`${apiUrl}/tasks/${t._id}`, {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": token,
+          },
+          body: JSON.stringify({ kanbanIndexVertical: t.kanbanIndexVertical }),
+        })
+      )
+    );
+    reloadTasks();
   };
   
   
@@ -197,6 +227,31 @@ const TaskKanbanView = ({ tasks, onTaskClick }) => {
     if (hasNewTasks) setShowNewColumn(true);
   }, [hasNewTasks]);
 
+  const reloadTasks = async () => {
+    const token = localStorage.getItem("token");
+    if (!projectId) {
+      setTaskList([]);
+      return;
+    }
+    const res = await fetch(`${apiUrl}/projects/${projectId}/tasks`, {
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": token,
+      },
+    });
+    if (res.ok) {
+      let data = await res.json();
+      // Das Backend liefert { status: 'success', tasks: [...] }
+      if (Array.isArray(data.tasks)) {
+        setTaskList(data.tasks);
+      } else {
+        setTaskList([]);
+      }
+    } else {
+      setTaskList([]);
+    }
+  };
+
   return (
     <div>
       {/* Toggle-Button immer zeigen, solange keine "new"-Tasks existieren */}
@@ -216,15 +271,16 @@ const TaskKanbanView = ({ tasks, onTaskClick }) => {
         {(showNewColumn || hasNewTasks) && (
           <div
             key="new"
-            className="task-kanban-column"
+            className={`task-kanban-column${dragOverColumn === "new" && dragSourceColumn !== "new" ? " highlighted" : ""}`}
             style={{
               borderTop: `5px solid #000000`,
               flex: 1,
               padding: "10px",
               minHeight: "300px"
             }}
-            onDragOver={(e) => e.preventDefault()}
-            onDrop={(e) => handleDrop(e, "new", false)}
+            onDragOver={(e) => { e.preventDefault(); setDragOverColumn("new"); }}
+            onDragLeave={() => setDragOverColumn(null)}
+            onDrop={(e) => { handleDrop(e, "new", false); setDragOverColumn(null); setDragSourceColumn(null); }}
           >
             <div style={{display: "flex", justifyContent: "space-between", alignItems: "center"}}>
               <h3 className="kanban-header">{t("new")}</h3>
@@ -287,10 +343,16 @@ const TaskKanbanView = ({ tasks, onTaskClick }) => {
         {sortedStatuses.map(([statusKey, status]) => (
           <div
             key={status.name}
-            className="task-kanban-column"
-            style={{ borderTop: `5px solid ${status.color}`, flex: 1, padding: "10px", minHeight: "300px" }}
-            onDragOver={(e) => e.preventDefault()}
-            onDrop={(e) => handleDrop(e, status.name, status.isDone)}
+            className={`task-kanban-column${dragOverColumn === status.name && dragSourceColumn !== status.name ? " highlighted" : ""}`}
+            style={{
+              borderTop: `5px solid ${status.color}`,
+              flex: 1,
+              padding: "10px",
+              minHeight: "300px"
+            }}
+            onDragOver={(e) => { e.preventDefault(); setDragOverColumn(status.name); }}
+            onDragLeave={() => setDragOverColumn(null)}
+            onDrop={(e) => { handleDrop(e, status.name, status.isDone); setDragOverColumn(null); setDragSourceColumn(null); }}
           >
             <h3 className="kanban-header">{status.name}</h3>
             {groupedTasks[status.name] && groupedTasks[status.name]

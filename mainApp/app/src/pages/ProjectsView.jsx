@@ -16,6 +16,7 @@ import TaskCreateModal from "../components/TaskCreateModal";
 import TaskViewModal from "../components/TaskViewModal";
 import config from "../config/config.json";
 import ProjectOverview from "../components/ProjectOverview";
+import Fuse from "fuse.js";
 
 const apiUrl = import.meta.env.VITE_APP_API_URL || "http://localhost:3001";
 
@@ -64,6 +65,7 @@ const ProjectView = () => {
   const [editingFieldType, setEditingFieldType] = useState("");
   const [editingFieldRequired, setEditingFieldRequired] = useState(false);
   const [dropdownValues, setDropdownValues] = useState([""]); // State für Dropdown-Werte
+  const [searchTerm, setSearchTerm] = useState(""); // Suchfeld-Status
 
   
   useEffect(() => {
@@ -433,343 +435,363 @@ const ProjectView = () => {
     setEditingFieldRequired(false);
   };
   
+  const fuse = new Fuse(tasks, {
+    keys: ["title", "_id", "id", "ticketNumber"],
+    threshold: 0.4, // 0 = exakt, 1 = sehr unscharf
+  });
+
+  const filteredTasks = !searchTerm
+    ? tasks
+    : fuse.search(searchTerm).map(result => result.item);
+
   if (loading) return <div>{t("loading_project")}</div>;
   if (accessDenied) return <div style={{color:"red"}}>{t("no_access_to_project") || "Kein Zugriff auf dieses Projekt."}</div>;
 
   return (
     <div className="project-view-container">
-    <div className="tabs">
-      <button onClick={() => setActiveTab("overview")}>{t("project_overview")}</button>
-      <button onClick={() => setActiveTab("list")}>{t("task_list")}</button>
-      <button onClick={() => setActiveTab("grid")}>{t("task_grid")}</button>
-      <button onClick={() => setActiveTab("kanban")}>{t("kanban")}</button>
-      <button onClick={() => setActiveTab("gantt")}>{t("gantt_diagram")}</button>
-      <button className="button-violet" onClick={() => openTaskCreateModal(null)}>+ {t("add_task")}</button>
-    </div>
-
-    <div className="tab-content">
-      {activeTab === "overview" && project && (
-        <div className="project-overview-grid">
-          {/* Hauptinfos */}
-          <div className="project-card project-main-info">
-            {isEditing ? (
-              <>
-                <span className="error-message">{errorMessage}</span>
-                <input className="input" type="text" value={editProject.title} onChange={(e) => setEditProject({ ...editProject, title: e.target.value })} placeholder={t("title")} />
-                <textarea className="input" value={editProject.description} onChange={(e) => setEditProject({ ...editProject, description: e.target.value })} placeholder={t("description")} />
-                <input className="input" type="datetime-local" value={editProject.deadline} onChange={(e) => setEditProject({ ...editProject, deadline: e.target.value })} />
-                <Select isMulti options={users} value={selectedMembers} onChange={setSelectedMembers} placeholder={t("choose_assigned_users")} />
-                <Select
-                  options={projectStatuses}
-                  value={projectStatuses.find(status => status.value === editProject.status)}
-                  onChange={(option) => setEditProject({ ...editProject, status: option.value })} />
-                <label className="checkbox-label">
-                  <input type="checkbox" checked={editProject.isServiceDesk} onChange={(e) => setEditProject({ ...editProject, isServiceDesk: e.target.checked })} /> {t("is_servicedesk")}
-                </label>
-                {editProject.isServiceDesk && (
-                  <div className="modal-mail2ticket-fields-container">
-                    <div className="modal-mail2ticket-fields-group">
-                      <input 
-                        type="text" 
-                        placeholder="IMAP Host" 
-                        value={editProject.imapHost || ""} 
-                        onChange={(e) => setEditProject({...editProject, imapHost: e.target.value})} 
-                      />
-                      <input 
-                        type="text" 
-                        placeholder="IMAP Port" 
-                        value={editProject.imapPort || ""} 
-                        onChange={(e) => setEditProject({...editProject, imapPort: e.target.value})} 
-                      />
-                    </div>
-
-                    <div className="modal-mail2ticket-fields-group">
-                      <input 
-                        type="text" 
-                        placeholder="IMAP User" 
-                        value={editProject.imapUser || ""} 
-                        onChange={(e) => setEditProject({...editProject, imapUser: e.target.value})} 
-                      />
-                      <input 
-                        type="password" 
-                        placeholder="IMAP Password" 
-                        value={editProject.imapPassword || ""} 
-                        onChange={(e) => setEditProject({...editProject, imapPassword: e.target.value})} 
-                      />
-                    </div>
-
-                    <div className="modal-mail2ticket-fields-group">
-                      <input 
-                        type="email" 
-                        placeholder="Email Address" 
-                        value={editProject.emailAddress || ""} 
-                        onChange={(e) => setEditProject({...editProject, emailAddress: e.target.value})} 
-                      />
-                      <input 
-                        type="number" 
-                        placeholder="Check Period (minutes)" 
-                        value={editProject.checkPeriodInMinutes || ""} 
-                        onChange={(e) => setEditProject({...editProject, checkPeriodInMinutes: e.target.value})} 
-                      />
-                    </div>
-
-                    <div className="modal-mail2ticket-fields-group">
-                      <input 
-                        type="text" 
-                        placeholder="SMTP Host" 
-                        value={editProject.smtpHost || ""} 
-                        onChange={(e) => setEditProject({...editProject, smtpHost: e.target.value})} 
-                      />
-                      <input 
-                        type="text" 
-                        placeholder="SMTP Port" 
-                        value={editProject.smtpPort || ""} 
-                        onChange={(e) => setEditProject({...editProject, smtpPort: e.target.value})} 
-                      />
-                    </div>
-
-                    <div className="modal-mail2ticket-fields-group">                
-                      <input 
-                        type="text" 
-                        placeholder="SMTP User" 
-                        value={editProject.smtpUser || ""} 
-                        onChange={(e) => setEditProject({...editProject, smtpUser: e.target.value})} 
-                      />
-                      <input 
-                        type="password" 
-                        placeholder="SMTP Password" 
-                        value={editProject.smtpPassword || ""} 
-                        onChange={(e) => setEditProject({...editProject, smtpPassword: e.target.value})} 
-                      />
-                    </div>  
-
-                    <div className="modal-mail2ticket-fields-group">
-                      <label>
-                        <input 
-                          type="checkbox" 
-                          checked={editProject.smtpSecure || false} 
-                          onChange={(e) => setEditProject({...editProject, smtpSecure: e.target.checked})} 
-                        /> SMTP Secure
-                      </label>
-                    </div>
-                  </div>
-
-                  )}
-                  <div className="button-row">
-                    <button className="button-primary" onClick={updateProjectDetails}>{t("save")}</button>
-                    <button className="button-secondary" onClick={stopEditing}>{t("cancel")}</button>
-                  </div>
-              </>
-            ) : (
-              <>
-                <h2 className="project-title">{project.title}</h2>
-                <p style={{marginTop: 0, color: "var(--body-text)"}}>{project.description}</p>
-                <div className="project-meta">
-                  <span><strong>{t("status")}:</strong> {projectStatuses.find(status => status.label === project?.status)?.label || t("unknown")}</span>
-                  <span><strong>{t("deadline")}:</strong> {new Date(project.deadline).toLocaleString()}</span>
-                  <span><strong>{t("is_servicedesk")}:</strong> {project.isServiceDesk ? "☑️" : "❌"}</span>
-                </div>
-                {/* Mitglieder-Badges */}
-                <div style={{ display: "flex", flexWrap: "wrap", gap: "8px", marginTop: "8px" }}>
-                  {t("members")}:{project.members && project.members.map(member => (
-                    <Link
-                      key={member._id}
-                      to={`/user/${member.username}`}
-                      className="user-badge"
-                      style={{ textDecoration: "none", color: "inherit", cursor: "pointer" }}
-                    >
-                      {member.firstname} {member.lastname} ({member.username})
-                    </Link>
-                  ))}
-                </div>
-                <div className="button-row">
-                  <button className="button-primary" onClick={startEditing}>{t("edit")}</button>
-                </div>
-              </>
-            )}
-          </div>
-          {/* Statistiken */}
-          <div className="project-card">
-            <h3>{t("total_tasks")}</h3>
-            <div className="project-stat">{tasks.length}</div>
-          </div>
-          <div className="project-card">
-            <h3>{t("open_tasks")}</h3>
-            <div className="project-stat">{tasks.filter(task => !task.isDone).length}</div>
-            <Doughnut
-              data={{
-                labels: [t("open_tasks"), t("done_tasks")],
-                datasets: [
-                  {
-                    data: [
-                      tasks.filter(task => !task.isDone).length,
-                      tasks.filter(task => task.isDone).length
-                    ],
-                    backgroundColor: ["#ffcc00", "#99ff99"],
-                  }
-                ]
-              }}
-              options={{
-                plugins: {
-                  legend: { display: true, position: "bottom" }
-                }
-              }}
-            />
-            {t("done_in_percent")}:
-            <ProgressBar className="progress-bar" style={{ alignSelf: "flex-end" }} bgColor="#99ff99" labelColor="#000000" completed={(100 - (100 / tasks.length * tasks.filter(task => !task.isDone).length)).toPrecision(2)} />
-          </div>
-          {/* Custom Fields */}
-          <div className="project-card project-custom-fields">
-            <h3>{t("custom_fields_for_tasks")}</h3>
-            {loadingCustomFields ? (
-              <p>Lädt Custom Fields...</p>
-            ) : customFields.length > 0 ? (
-              <table>
-                {customFields.map((field) => (
-                  <tr key={field._id}>
-                    {editingFieldId === field._id ? (
-                      <>
-                        <td>
-                        <input 
-                            type="text" 
-                            value={editingFieldTitle} 
-                            onChange={(e) => setEditingFieldTitle(e.target.value)} 
-                          />
-                        </td>
-                        <td>
-                          <Select
-                            options={customFieldTypeOptions}
-                            value={customFieldTypeOptions.find(opt => opt.value === field.type)}
-                            onChange={(selectedOption) => setType(selectedOption.value)}
-                          />
-                          {field.type === "dropdown" && (
-                            <div>
-                              <h4>{t("dropdown_values")}</h4>
-                              {JSON.parse(field.options).map((value, index) => (
-                                <div key={index}>
-                                  <input
-                                    type="text"
-                                    value={value}
-                                    onChange={(e) => {
-                                      const newValues = [...dropdownValues];
-                                      newValues[index] = e.target.value;
-                                      setDropdownValues(newValues);
-                                    }}
-                                    placeholder={t("dropdown_option")}
-                                  />
-                                  <button type="button" onClick={() => setDropdownValues(dropdownValues.filter((_, i) => i !== index))}>-</button>
-                                </div>
-                              ))}
-                              <button type="button" onClick={() => setDropdownValues([...dropdownValues, ""])}>+</button>
-                            </div>
-                          )}
-                        </td>
-                        <td>
-                          <label>
-                            <input 
-                              type="checkbox" 
-                              checked={editingFieldRequired} 
-                              onChange={(e) => setEditingFieldRequired(e.target.checked)} 
-                            /> {t("required")}
-                        </label>
-                        </td>
-                        <td>
-                          <div style={{"display": "inline-flex", "gap": "5px", "marginLeft": "5px"}}>
-                              <button style={{"padding": "5px"}} onClick={handleSaveEditCustomField}>{t("save")}</button>
-                              <button style={{"padding": "5px"}} onClick={handleCancelEditCustomField}>{t("cancel")}</button>
-                          </div>
-                        </td>
-                      </>
-                    ) : (
-                      <>
-                        <td>
-                          <strong>{field.title}</strong> – {field.type} {field.required ? "(" + t("required") + ")" : ""}
-                          {isEditingCustomFields && (
-                              <div style={{"display": "inline-flex", "gap": "5px", "marginLeft": "5px"}}>
-                                <button style={{"padding": "5px"}}  onClick={() => handleStartEditCustomField(field)}>{t("edit")}</button>
-                                <button style={{"padding": "5px"}}  onClick={() => handleDeleteCustomField(field._id)}>{t("delete")}</button>
-                              </div>
-                          )}
-                        </td>
-                      </>
-                    )}
-                  </tr>
-                ))}
-              </table>
-            ) : (
-              <p>{t("no_custom_fields_available")}</p>
-            )}
-            
-            {isEditingCustomFields && (
-              <div>
-                <h4>Neues Custom Field erstellen</h4>
-                <form onSubmit={handleCustomFieldSubmit} style={{"display": "flex", "flexDirection": "column", "gap": "5px"}}>
-                  <div>
-                    <input
-                      id="customFieldTitle"
-                      type="text"
-                      value={title}
-                      onChange={(e) => setTitle(e.target.value)}
-                      required
-                      placeholder={t("title")}
-                    />
-                  </div>
-                  <div>
-                    <Select
-                      options={customFieldTypeOptions}
-                      value={customFieldTypeOptions.find(opt => opt.value === type)}
-                      onChange={(selectedOption) => setType(selectedOption.value)}
-                    />
-                    {type === "dropdown" && (
-                      <div>
-                        <h4>{t("dropdown_values")}</h4>
-                        {dropdownValues.map((value, index) => (
-                          <div key={index}>
-                            <input
-                              type="text"
-                              value={value}
-                              onChange={(e) => {
-                                const newValues = [...dropdownValues];
-                                newValues[index] = e.target.value;
-                                setDropdownValues(newValues);
-                              }}
-                              placeholder={t("dropdown_option")}
-                            />
-                            <button type="button" onClick={() => setDropdownValues(dropdownValues.filter((_, i) => i !== index))}>-</button>
-                          </div>
-                        ))}
-                        <button type="button" onClick={() => setDropdownValues([...dropdownValues, ""])}>+</button>
-                      </div>
-                    )}
-                  </div>
-                  <div>
-                    <label htmlFor="customFieldRequired">{t("required")}:</label>
-                    <input
-                      id="customFieldRequired"
-                      type="checkbox"
-                      checked={required}
-                      onChange={(e) => setRequired(e.target.checked)}
-                    />
-                  </div>
-                  <button type="submit">Custom Field erstellen</button>
-                </form>
-              </div>
-            )}
-            {isEditingCustomFields ? null : <button onClick={() => setIsEditingCustomFields(true)}>{t("edit")}</button>}
-            {!isEditingCustomFields ? null : <button onClick={() => setIsEditingCustomFields(false)}>{t("cancel")}</button>}
-          </div>
+      {/* Tabs und Suchfeld nebeneinander */}
+      <div className="tabs-searchbar-row">
+        <div className="tabs">
+          <button onClick={() => setActiveTab("overview")}>{t("project_overview")}</button>
+          <button onClick={() => setActiveTab("list")}>{t("task_list")}</button>
+          <button onClick={() => setActiveTab("grid")}>{t("task_grid")}</button>
+          <button onClick={() => setActiveTab("kanban")}>{t("kanban")}</button>
+          <button onClick={() => setActiveTab("gantt")}>{t("gantt_diagram")}</button>
+          <button className="button-violet" onClick={() => openTaskCreateModal(null)}>+ {t("add_task")}</button>
         </div>
-        )}
-        {activeTab === "list" && <TaskListView tasks={tasks} onTaskClick={openTaskViewModal} />}
-        {activeTab === "grid" && <TaskGridView tasks={tasks} onTaskClick={openTaskViewModal} />}
-        {activeTab === "kanban" && <TaskKanbanView tasks={tasks} onTaskClick={openTaskViewModal} />}
-        {activeTab === "gantt" && <TaskGanttView tasks={tasks} onTaskClick={openTaskViewModal} />}
+        <div className="searchbar-container">
+          <input
+            type="text"
+            placeholder={t("search_tasks") || "Tasks durchsuchen..."}
+            value={searchTerm}
+            onChange={e => setSearchTerm(e.target.value)}
+          />
+        </div>
+      </div>
+      <div className="tab-content">
+        {activeTab === "overview" && project && (
+          <div className="project-overview-grid">
+            {/* Hauptinfos */}
+            <div className="project-card project-main-info">
+              {isEditing ? (
+                <>
+                  <span className="error-message">{errorMessage}</span>
+                  <input className="input" type="text" value={editProject.title} onChange={(e) => setEditProject({ ...editProject, title: e.target.value })} placeholder={t("title")} />
+                  <textarea className="input" value={editProject.description} onChange={(e) => setEditProject({ ...editProject, description: e.target.value })} placeholder={t("description")} />
+                  <input className="input" type="datetime-local" value={editProject.deadline} onChange={(e) => setEditProject({ ...editProject, deadline: e.target.value })} />
+                  <Select isMulti options={users} value={selectedMembers} onChange={setSelectedMembers} placeholder={t("choose_assigned_users")} />
+                  <Select
+                    options={projectStatuses}
+                    value={projectStatuses.find(status => status.value === editProject.status)}
+                    onChange={(option) => setEditProject({ ...editProject, status: option.value })} />
+                  <label className="checkbox-label">
+                    <input type="checkbox" checked={editProject.isServiceDesk} onChange={(e) => setEditProject({ ...editProject, isServiceDesk: e.target.checked })} /> {t("is_servicedesk")}
+                  </label>
+                  {editProject.isServiceDesk && (
+                    <div className="modal-mail2ticket-fields-container">
+                      <div className="modal-mail2ticket-fields-group">
+                        <input 
+                          type="text" 
+                          placeholder="IMAP Host" 
+                          value={editProject.imapHost || ""} 
+                          onChange={(e) => setEditProject({...editProject, imapHost: e.target.value})} 
+                        />
+                        <input 
+                          type="text" 
+                          placeholder="IMAP Port" 
+                          value={editProject.imapPort || ""} 
+                          onChange={(e) => setEditProject({...editProject, imapPort: e.target.value})} 
+                        />
+                      </div>
+
+                      <div className="modal-mail2ticket-fields-group">
+                        <input 
+                          type="text" 
+                          placeholder="IMAP User" 
+                          value={editProject.imapUser || ""} 
+                          onChange={(e) => setEditProject({...editProject, imapUser: e.target.value})} 
+                        />
+                        <input 
+                          type="password" 
+                          placeholder="IMAP Password" 
+                          value={editProject.imapPassword || ""} 
+                          onChange={(e) => setEditProject({...editProject, imapPassword: e.target.value})} 
+                        />
+                      </div>
+
+                      <div className="modal-mail2ticket-fields-group">
+                        <input 
+                          type="email" 
+                          placeholder="Email Address" 
+                          value={editProject.emailAddress || ""} 
+                          onChange={(e) => setEditProject({...editProject, emailAddress: e.target.value})} 
+                        />
+                        <input 
+                          type="number" 
+                          placeholder="Check Period (minutes)" 
+                          value={editProject.checkPeriodInMinutes || ""} 
+                          onChange={(e) => setEditProject({...editProject, checkPeriodInMinutes: e.target.value})} 
+                        />
+                      </div>
+
+                      <div className="modal-mail2ticket-fields-group">
+                        <input 
+                          type="text" 
+                          placeholder="SMTP Host" 
+                          value={editProject.smtpHost || ""} 
+                          onChange={(e) => setEditProject({...editProject, smtpHost: e.target.value})} 
+                        />
+                        <input 
+                          type="text" 
+                          placeholder="SMTP Port" 
+                          value={editProject.smtpPort || ""} 
+                          onChange={(e) => setEditProject({...editProject, smtpPort: e.target.value})} 
+                        />
+                      </div>
+
+                      <div className="modal-mail2ticket-fields-group">                
+                        <input 
+                          type="text" 
+                          placeholder="SMTP User" 
+                          value={editProject.smtpUser || ""} 
+                          onChange={(e) => setEditProject({...editProject, smtpUser: e.target.value})} 
+                        />
+                        <input 
+                          type="password" 
+                          placeholder="SMTP Password" 
+                          value={editProject.smtpPassword || ""} 
+                          onChange={(e) => setEditProject({...editProject, smtpPassword: e.target.value})} 
+                        />
+                      </div>  
+
+                      <div className="modal-mail2ticket-fields-group">
+                        <label>
+                          <input 
+                            type="checkbox" 
+                            checked={editProject.smtpSecure || false} 
+                            onChange={(e) => setEditProject({...editProject, smtpSecure: e.target.checked})} 
+                          /> SMTP Secure
+                        </label>
+                      </div>
+                    </div>
+
+                    )}
+                    <div className="button-row">
+                      <button className="button-primary" onClick={updateProjectDetails}>{t("save")}</button>
+                      <button className="button-secondary" onClick={stopEditing}>{t("cancel")}</button>
+                    </div>
+                </>
+              ) : (
+                <>
+                  <h2 className="project-title">{project.title}</h2>
+                  <p style={{marginTop: 0, color: "var(--body-text)"}}>{project.description}</p>
+                  <div className="project-meta">
+                    <span><strong>{t("status")}:</strong> {projectStatuses.find(status => status.label === project?.status)?.label || t("unknown")}</span>
+                    <span><strong>{t("deadline")}:</strong> {new Date(project.deadline).toLocaleString()}</span>
+                    <span><strong>{t("is_servicedesk")}:</strong> {project.isServiceDesk ? "☑️" : "❌"}</span>
+                  </div>
+                  {/* Mitglieder-Badges */}
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: "8px", marginTop: "8px" }}>
+                    {t("members")}:{project.members && project.members.map(member => (
+                      <Link
+                        key={member._id}
+                        to={`/user/${member.username}`}
+                        className="user-badge"
+                        style={{ textDecoration: "none", color: "inherit", cursor: "pointer" }}
+                      >
+                        {member.firstname} {member.lastname} ({member.username})
+                      </Link>
+                    ))}
+                  </div>
+                  <div className="button-row">
+                    <button className="button-primary" onClick={startEditing}>{t("edit")}</button>
+                  </div>
+                </>
+              )}
+            </div>
+            {/* Statistiken */}
+            <div className="project-card">
+              <h3>{t("total_tasks")}</h3>
+              <div className="project-stat">{tasks.length}</div>
+            </div>
+            <div className="project-card">
+              <h3>{t("open_tasks")}</h3>
+              <div className="project-stat">{tasks.filter(task => !task.isDone).length}</div>
+              <Doughnut
+                data={{
+                  labels: [t("open_tasks"), t("done_tasks")],
+                  datasets: [
+                    {
+                      data: [
+                        tasks.filter(task => !task.isDone).length,
+                        tasks.filter(task => task.isDone).length
+                      ],
+                      backgroundColor: ["#ffcc00", "#99ff99"],
+                    }
+                  ]
+                }}
+                options={{
+                  plugins: {
+                    legend: { display: true, position: "bottom" }
+                  }
+                }}
+              />
+              {t("done_in_percent")}:
+              <ProgressBar className="progress-bar" style={{ alignSelf: "flex-end" }} bgColor="#99ff99" labelColor="#000000" completed={(100 - (100 / tasks.length * tasks.filter(task => !task.isDone).length)).toPrecision(2)} />
+            </div>
+            {/* Custom Fields */}
+            <div className="project-card project-custom-fields">
+              <h3>{t("custom_fields_for_tasks")}</h3>
+              {loadingCustomFields ? (
+                <p>Lädt Custom Fields...</p>
+              ) : customFields.length > 0 ? (
+                <table>
+                  {customFields.map((field) => (
+                    <tr key={field._id}>
+                      {editingFieldId === field._id ? (
+                        <>
+                          <td>
+                          <input 
+                              type="text" 
+                              value={editingFieldTitle} 
+                              onChange={(e) => setEditingFieldTitle(e.target.value)} 
+                            />
+                          </td>
+                          <td>
+                            <Select
+                              options={customFieldTypeOptions}
+                              value={customFieldTypeOptions.find(opt => opt.value === field.type)}
+                              onChange={(selectedOption) => setType(selectedOption.value)}
+                            />
+                            {field.type === "dropdown" && (
+                              <div>
+                                <h4>{t("dropdown_values")}</h4>
+                                {JSON.parse(field.options).map((value, index) => (
+                                  <div key={index}>
+                                    <input
+                                      type="text"
+                                      value={value}
+                                      onChange={(e) => {
+                                        const newValues = [...dropdownValues];
+                                        newValues[index] = e.target.value;
+                                        setDropdownValues(newValues);
+                                      }}
+                                      placeholder={t("dropdown_option")}
+                                    />
+                                    <button type="button" onClick={() => setDropdownValues(dropdownValues.filter((_, i) => i !== index))}>-</button>
+                                  </div>
+                                ))}
+                                <button type="button" onClick={() => setDropdownValues([...dropdownValues, ""])}>+</button>
+                              </div>
+                            )}
+                          </td>
+                          <td>
+                            <label>
+                              <input 
+                                type="checkbox" 
+                                checked={editingFieldRequired} 
+                                onChange={(e) => setEditingFieldRequired(e.target.checked)} 
+                              /> {t("required")}
+                          </label>
+                          </td>
+                          <td>
+                            <div style={{"display": "inline-flex", "gap": "5px", "marginLeft": "5px"}}>
+                                <button style={{"padding": "5px"}} onClick={handleSaveEditCustomField}>{t("save")}</button>
+                                <button style={{"padding": "5px"}} onClick={handleCancelEditCustomField}>{t("cancel")}</button>
+                            </div>
+                          </td>
+                        </>
+                      ) : (
+                        <>
+                          <td>
+                            <strong>{field.title}</strong> – {field.type} {field.required ? "(" + t("required") + ")" : ""}
+                            {isEditingCustomFields && (
+                                <div style={{"display": "inline-flex", "gap": "5px", "marginLeft": "5px"}}>
+                                  <button style={{"padding": "5px"}}  onClick={() => handleStartEditCustomField(field)}>{t("edit")}</button>
+                                  <button style={{"padding": "5px"}}  onClick={() => handleDeleteCustomField(field._id)}>{t("delete")}</button>
+                                </div>
+                            )}
+                          </td>
+                        </>
+                      )}
+                    </tr>
+                  ))}
+                </table>
+              ) : (
+                <p>{t("no_custom_fields_available")}</p>
+              )}
+              
+              {isEditingCustomFields && (
+                <div>
+                  <h4>Neues Custom Field erstellen</h4>
+                  <form onSubmit={handleCustomFieldSubmit} style={{"display": "flex", "flexDirection": "column", "gap": "5px"}}>
+                    <div>
+                      <input
+                        id="customFieldTitle"
+                        type="text"
+                        value={title}
+                        onChange={(e) => setTitle(e.target.value)}
+                        required
+                        placeholder={t("title")}
+                      />
+                    </div>
+                    <div>
+                      <Select
+                        options={customFieldTypeOptions}
+                        value={customFieldTypeOptions.find(opt => opt.value === type)}
+                        onChange={(selectedOption) => setType(selectedOption.value)}
+                      />
+                      {type === "dropdown" && (
+                        <div>
+                          <h4>{t("dropdown_values")}</h4>
+                          {dropdownValues.map((value, index) => (
+                            <div key={index}>
+                              <input
+                                type="text"
+                                value={value}
+                                onChange={(e) => {
+                                  const newValues = [...dropdownValues];
+                                  newValues[index] = e.target.value;
+                                  setDropdownValues(newValues);
+                                }}
+                                placeholder={t("dropdown_option")}
+                              />
+                              <button type="button" onClick={() => setDropdownValues(dropdownValues.filter((_, i) => i !== index))}>-</button>
+                            </div>
+                          ))}
+                          <button type="button" onClick={() => setDropdownValues([...dropdownValues, ""])}>+</button>
+                        </div>
+                      )}
+                    </div>
+                    <div>
+                      <label htmlFor="customFieldRequired">{t("required")}:</label>
+                      <input
+                        id="customFieldRequired"
+                        type="checkbox"
+                        checked={required}
+                        onChange={(e) => setRequired(e.target.checked)}
+                      />
+                    </div>
+                    <button type="submit">Custom Field erstellen</button>
+                  </form>
+                </div>
+              )}
+              {isEditingCustomFields ? null : <button onClick={() => setIsEditingCustomFields(true)}>{t("edit")}</button>}
+              {!isEditingCustomFields ? null : <button onClick={() => setIsEditingCustomFields(false)}>{t("cancel")}</button>}
+            </div>
+          </div>
+          )}
+          {activeTab === "list" && <TaskListView tasks={filteredTasks} onTaskClick={openTaskViewModal} />}
+          {activeTab === "grid" && <TaskGridView tasks={filteredTasks} onTaskClick={openTaskViewModal} />}
+          {activeTab === "kanban" && <TaskKanbanView tasks={filteredTasks} onTaskClick={openTaskViewModal} projectId={projectId} />}
+          {activeTab === "gantt" && <TaskGanttView tasks={filteredTasks} onTaskClick={openTaskViewModal} />}
+        </div>
+        <>
+          {showTaskViewModal && <TaskViewModal task={selectedTask} onClose={closeTaskViewModal} />}
+          {showTaskCreateModal && <TaskCreateModal onClose={closeTaskCreateModal} />}
+        </>
       </div>
 
-
-      {showTaskViewModal && <TaskViewModal task={selectedTask} onClose={closeTaskViewModal} />}
-      {showTaskCreateModal && <TaskCreateModal onClose={closeTaskCreateModal} />}
-    </div>
   );
 };
 

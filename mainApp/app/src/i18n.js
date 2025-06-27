@@ -218,6 +218,7 @@ i18n.use(initReactI18next).init({
         "hide_new_column": "Hide 'New' column",
         "show_new_column": "Show 'New' column",
         "all": "All",
+        "search_tasks": "Search Tasks",
       }
     },
     de: {
@@ -432,6 +433,7 @@ i18n.use(initReactI18next).init({
         "hide_new_column": "'Neu' Spalte ausblenden",
         "show_new_column": "'Neu' Spalte anzeigen",
         "all": "Alle",
+        "search_tasks": "Aufgaben suchen",
       }
     }
   },

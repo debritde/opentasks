@@ -1430,7 +1430,7 @@ app.put('/tasks/:id', async (req, res) => {
         if (priority) task.priority = priority;
         if (!isDone) task.isDone = false;
         if (isDone) task.isDone = true;
-        if (kanbanIndexVertical) task.kanbanIndexVertical = kanbanIndexVertical;
+        if (kanbanIndexVertical !== undefined) task.kanbanIndexVertical = kanbanIndexVertical;
         if (customFields) task.customFields = customFields;
         
         if (assignedUsers) {

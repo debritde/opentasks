@@ -1040,6 +1040,12 @@ a {
   flex-direction: column;
 }
 
+.task-kanban-column.highlighted {
+  background: rgba(80,180,255,0.13);
+  box-shadow: 0 0 0 3px #4da8da;
+  transition: background 0.15s, box-shadow 0.15s;
+}
+
 .task-kanban-column h3 {
   text-align: center;
   font-size: 16px;
@@ -2567,4 +2573,47 @@ textarea.modal-input {
 
 .hide {
   display: none ;
+}
+
+.searchbar-container {
+  display: flex;
+  justify-content: start;
+  align-items: center;
+  width: 100%;
+}
+
+.tabs-searchbar-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+.tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.searchbar-container {
+  flex-shrink: 0;
+}
+
+/* Responsiv: Suchfeld unter Tabs auf kleinen Bildschirmen */
+@media (max-width: 700px) {
+  .tabs-searchbar-row {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+  .searchbar-container {
+    width: 100%;
+  }
+  .searchbar-input {
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+  }
 }
